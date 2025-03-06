@@ -1,8 +1,13 @@
 import sys
-from PyQt6.QtWidgets import QGridLayout, QDialog, QApplication, QMainWindow, QPushButton, QLabel, QLineEdit, QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QLineEdit, QComboBox, QCheckBox,
+    QVBoxLayout, QWidget, QPushButton, QListView, QAbstractItemView, QTabWidget,
+    QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit
+)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction
 import sqlite3
-import xml.etree.ElementTree as ET
+
 class EditDialog(QDialog):
     def __init__(self, row_data, parent=None):
         super().__init__(parent)
@@ -79,14 +84,132 @@ class EditDialog(QDialog):
             print(f"Ошибка при сохранении данных: {e}")
 
 
-
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Авторизация")
+        self.setWindowTitle("CSC_CMDB")
         self.setGeometry(100, 100, 100, 100)
         self.authUI()
+
     
+    def authenticate(self):
+        user = self.input_user.text()
+        password = self.input_pass.text()
+        
+        if self.check_user_credentials(user, password):
+            self.label_user.setText("Доступ разрешен")
+            self.setGeometry(100, 100, 600, 400)
+            self.fullUI()
+        else:
+            self.label_user.setText("Ошибка авторизации")
+    
+    def check_user_credentials(self, username, password):
+        try:
+            conn = sqlite3.connect('users.db')  # Подключение к базе SQLite
+            cursor = conn.cursor()
+            query = "SELECT * FROM users WHERE username = ? AND password = ?"
+            cursor.execute(query, (username, password))
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            return bool(result)  # True, если пользователь найден
+        except sqlite3.Error as e:
+            print(f"Ошибка подключения к базе данных: {e}")
+            return False
+        
+    def full_db_func(self):
+        layout = QVBoxLayout()
+
+        self.data_table = QTableWidget()
+        self.data_table.setColumnCount(19)
+        self.data_table.setHorizontalHeaderLabels([
+            "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
+            "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
+            "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
+            "project", "visible", "reserve"
+        ])
+        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.data_table.cellClicked.connect(self.on_cell_click)
+        layout.addWidget(self.data_table)
+
+        # Кнопка для загрузки данных
+        load_data_btn = QPushButton("Загрузить данные", self)
+        load_data_btn.clicked.connect(self.load_data)
+        layout.addWidget(load_data_btn)
+
+        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
+        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
+        layout.addWidget(self.import_txt_btn)
+
+        # Контейнер для размещения всего интерфейса
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        # Загрузка данных из базы
+        self.load_data()
+
+    def move_action_func(self):
+
+        main_widget = QWidget()
+        main_layout = QVBoxLayout(main_widget)
+
+        # Основная сетка
+        grid = QGridLayout()
+
+        # Поля ввода и подписи
+        grid.addWidget(QLabel("Объект"), 0, 0)
+        self.fio_input = QComboBox()
+        grid.addWidget(self.fio_input, 0, 1)
+
+        grid.addWidget(QLabel("№ обращения"), 1, 0)
+        self.request_input = QLineEdit()
+        grid.addWidget(self.request_input, 1, 1)
+
+        grid.addWidget(QLabel("Комментарий к обращению"), 2, 0)
+        self.comment_input = QTextEdit()
+        grid.addWidget(self.comment_input, 2, 1)
+
+        # Списки
+        self.list_left = QTextEdit()
+        self.list_right = QTextEdit()
+        grid.addWidget(self.list_left, 3, 0)
+        grid.addWidget(self.list_right, 3, 2)
+
+        # Кнопки перемещения
+        move_layout = QVBoxLayout()
+        self.move_left_btn = QPushButton("<<<---- переместить")
+        self.move_right_btn = QPushButton("---->>> переместить")
+        move_layout.addWidget(self.move_left_btn)
+        move_layout.addWidget(self.move_right_btn)
+        grid.addLayout(move_layout, 3, 1)
+
+        # Чекбоксы
+        checkbox_layout_left = QVBoxLayout()
+        checkbox_layout_right = QVBoxLayout()
+        options = [
+            "Хранение", "Перемещение", "Поиск", "Резерв",
+            "Исправно", "Не исправно", "Ремонт", "На списание",
+            "Списано", "Утиль", "Показать уволенных"
+        ]
+
+        self.checkboxes_left = [QCheckBox(opt) for opt in options]
+        self.checkboxes_right = [QCheckBox(opt) for opt in options]
+
+        for cb in self.checkboxes_left:
+            checkbox_layout_left.addWidget(cb)
+        for cb in self.checkboxes_right:
+            checkbox_layout_right.addWidget(cb)
+
+        grid.addLayout(checkbox_layout_left, 4, 0)
+        grid.addLayout(checkbox_layout_right, 4, 2)
+
+        # Добавляем сетку в основной макет
+        main_layout.addLayout(grid)
+        self.setCentralWidget(main_widget)
+
     def authUI(self):
         layout = QVBoxLayout()
         
@@ -116,6 +239,60 @@ class App(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
         self.input_pass.returnPressed.connect(self.authenticate)
+                    
+    def fullUI(self):
+        layout = QVBoxLayout()
+
+        # Добавляем Toolbar
+        toolbar = QToolBar("Основное меню")
+        self.addToolBar(toolbar)
+
+        move_action = QAction("Движение", self)
+        store_action = QAction("Склад", self)
+        tech_action = QAction("Техника", self)
+        employee_action = QAction("Сотрудник", self)
+        add_action = QAction("Добавление", self)
+        full_db_action = QAction("Таблица БД", self)
+
+        full_db_action.triggered.connect(self.full_db_func)
+        move_action.triggered.connect(self.move_action_func)
+        toolbar.addAction(move_action)
+        toolbar.addAction(store_action)
+        toolbar.addAction(tech_action)
+        toolbar.addAction(employee_action)
+        toolbar.addAction(add_action)
+        toolbar.addAction(full_db_action)
+
+        # Таблица для отображения данных
+        # self.data_table = QTableWidget()
+        # self.data_table.setColumnCount(19)
+        # self.data_table.setHorizontalHeaderLabels([
+        #     "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
+        #     "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
+        #     "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
+        #     "project", "visible", "reserve"
+        # ])
+        # self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        # self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # self.data_table.cellClicked.connect(self.on_cell_click)
+        # layout.addWidget(self.data_table)
+
+        # # Кнопка для загрузки данных
+        # load_data_btn = QPushButton("Загрузить данные", self)
+        # load_data_btn.clicked.connect(self.load_data)
+        # layout.addWidget(load_data_btn)
+
+        # self.import_txt_btn = QPushButton("Импортировать данные из TXT")
+        # self.import_txt_btn.clicked.connect(self.import_data_from_txt)
+        # layout.addWidget(self.import_txt_btn)
+
+        # Контейнер для размещения всего интерфейса
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        # Загрузка данных из базы
+        # self.load_data()
 
     def import_data_from_txt(self):
         try:
@@ -167,67 +344,8 @@ class App(QMainWindow):
 
         except Exception as e:
             print(f"Ошибка при импорте данных: {e}")
-                    
-    def fullUI(self):
-        layout = QVBoxLayout()
 
-        # Таблица для отображения данных
-        self.data_table = QTableWidget()
-        self.data_table.setColumnCount(19)  # 19 столбцов
-        self.data_table.setHorizontalHeaderLabels([
-            "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
-            "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
-            "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
-            "project", "visible", "reserve"
-        ])
-        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.data_table.cellClicked.connect(self.on_cell_click)
-        layout.addWidget(self.data_table)
 
-        # Кнопка для загрузки данных
-        load_data_btn = QPushButton("Загрузить данные", self)
-        load_data_btn.clicked.connect(self.load_data)
-        layout.addWidget(load_data_btn)
-
-        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
-        self.import_txt_btn.clicked.connect(self.import_data_from_txt)  # подключение импорта
-        layout.addWidget(self.import_txt_btn)
-        # Контейнер для размещения всего интерфейса
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-        # Загрузка данных из базы
-        self.load_data()
-    
-
-    def authenticate(self):
-        user = self.input_user.text()
-        password = self.input_pass.text()
-        
-        if self.check_user_credentials(user, password):
-            self.label_user.setText("Доступ разрешен")
-            self.setGeometry(100, 100, 600, 400)
-            self.fullUI()
-        else:
-            self.label_user.setText("Ошибка авторизации")
-    
-    def check_user_credentials(self, username, password):
-        try:
-            conn = sqlite3.connect('users.db')  # Подключение к базе SQLite
-            cursor = conn.cursor()
-            query = "SELECT * FROM users WHERE username = ? AND password = ?"
-            cursor.execute(query, (username, password))
-            result = cursor.fetchone()
-            cursor.close()
-            conn.close()
-            
-            return bool(result)  # True, если пользователь найден
-        except sqlite3.Error as e:
-            print(f"Ошибка подключения к базе данных: {e}")
-            return False
-    
     def load_data(self):
         try:
             conn = sqlite3.connect('tech_assets.db')  # Подключение к базе данных SQLite
@@ -302,7 +420,6 @@ class App(QMainWindow):
 
         except sqlite3.Error as e:
             print(f"Ошибка при сохранении данных: {e}")
-
 
 
     def import_data_from_txt(self):

@@ -191,8 +191,8 @@ class App(QMainWindow):
         self.move_right_btn.setFixedHeight(60)
 
         # Чекбоксы
-        checkbox_layout_left = QVBoxLayout()
-        checkbox_layout_right = QVBoxLayout()
+        checkbox_grid_left = QGridLayout()
+        checkbox_grid_right = QGridLayout()
         options = [
             "Хранение", "Перемещение", "Поиск", "Резерв",
             "Исправно", "Не исправно", "Ремонт", "На списание",
@@ -202,13 +202,28 @@ class App(QMainWindow):
         self.checkboxes_left = [QCheckBox(opt) for opt in options]
         self.checkboxes_right = [QCheckBox(opt) for opt in options]
 
-        for cb in self.checkboxes_left:
-            checkbox_layout_left.addWidget(cb)
-        for cb in self.checkboxes_right:
-            checkbox_layout_right.addWidget(cb)
+        # Заполняем левую часть чекбоксов
+        row, col = 0, 0
+        for i, cb in enumerate(self.checkboxes_left):
+            checkbox_grid_left.addWidget(cb, row, col)
+            col += 1
+            if col >= 2:  # Переход на следующую строку каждые 2 чекбокса
+                col = 0
+                row += 1
 
-        grid.addLayout(checkbox_layout_left, 7, 0)
-        grid.addLayout(checkbox_layout_right, 7, 2)
+        # Заполняем правую часть чекбоксов
+        row, col = 0, 0
+        for i, cb in enumerate(self.checkboxes_right):
+            checkbox_grid_right.addWidget(cb, row, col)
+            col += 1
+            if col >= 2:  # Переход на следующую строку каждые 2 чекбокса
+                col = 0
+                row += 1
+
+        # Вставляем сетки чекбоксов в основную сетку
+        grid.addLayout(checkbox_grid_left, 7, 0)
+        grid.addLayout(checkbox_grid_right, 7, 2)
+
 
         # Добавляем сетку в основной макет
         main_layout.addLayout(grid)

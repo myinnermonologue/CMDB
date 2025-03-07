@@ -162,29 +162,33 @@ class App(QMainWindow):
         # Поля ввода и подписи
         grid.addWidget(QLabel("Объект"), 0, 0)
         self.fio_input = QComboBox()
-        grid.addWidget(self.fio_input, 0, 1)
+        grid.addWidget(self.fio_input, 1, 0)
 
-        grid.addWidget(QLabel("№ обращения"), 1, 0)
+        grid.addWidget(QLabel("Объект"), 0, 2)
+        self.fio_output = QComboBox()
+        grid.addWidget(self.fio_output, 1, 2)
+
+        grid.addWidget(QLabel("№ обращения"), 2, 0)
         self.request_input = QLineEdit()
-        grid.addWidget(self.request_input, 1, 1)
+        grid.addWidget(self.request_input, 3, 0)
 
-        grid.addWidget(QLabel("Комментарий к обращению"), 2, 0)
+        grid.addWidget(QLabel("Комментарий к обращению"), 4, 0)
         self.comment_input = QTextEdit()
-        grid.addWidget(self.comment_input, 2, 1)
-
+        grid.addWidget(self.comment_input, 5, 0)
+        self.comment_input.setFixedHeight(60)
         # Списки
         self.list_left = QTextEdit()
         self.list_right = QTextEdit()
-        grid.addWidget(self.list_left, 3, 0)
-        grid.addWidget(self.list_right, 3, 2)
+        grid.addWidget(self.list_left, 6, 0)
+        grid.addWidget(self.list_right, 6, 2)
+
 
         # Кнопки перемещения
         move_layout = QVBoxLayout()
-        self.move_left_btn = QPushButton("<<<---- переместить")
-        self.move_right_btn = QPushButton("---->>> переместить")
-        move_layout.addWidget(self.move_left_btn)
+        self.move_right_btn = QPushButton("Переместить---->>>")
         move_layout.addWidget(self.move_right_btn)
-        grid.addLayout(move_layout, 3, 1)
+        grid.addLayout(move_layout, 6, 1)
+        self.move_right_btn.setFixedHeight(60)
 
         # Чекбоксы
         checkbox_layout_left = QVBoxLayout()
@@ -203,8 +207,8 @@ class App(QMainWindow):
         for cb in self.checkboxes_right:
             checkbox_layout_right.addWidget(cb)
 
-        grid.addLayout(checkbox_layout_left, 4, 0)
-        grid.addLayout(checkbox_layout_right, 4, 2)
+        grid.addLayout(checkbox_layout_left, 7, 0)
+        grid.addLayout(checkbox_layout_right, 7, 2)
 
         # Добавляем сетку в основной макет
         main_layout.addLayout(grid)

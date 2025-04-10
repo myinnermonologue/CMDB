@@ -55,7 +55,7 @@ class EditDialog(QDialog):
         updated_data = [field.text() for field in self.edit_fields.values()]
         
         try:
-            conn = sqlite3.connect('tech_assets.db')
+            conn = sqlite3.connect('Database.db')
             cursor = conn.cursor()
 
             query = """
@@ -76,7 +76,7 @@ class EditDialog(QDialog):
 
             # Автоматически обновляем данные в таблице
             if isinstance(self.parent(), App):
-                self.parent().load_data()
+                self.parent().load_data_assets()
 
             self.accept()  # Закрытие окна
 
@@ -105,7 +105,7 @@ class App(QMainWindow):
     
     def check_user_credentials(self, username, password):
         try:
-            conn = sqlite3.connect('users.db')  # Подключение к базе SQLite
+            conn = sqlite3.connect('Database.db')  # Подключение к базе SQLite
             cursor = conn.cursor()
             query = "SELECT * FROM users WHERE username = ? AND password = ?"
             cursor.execute(query, (username, password))
@@ -118,7 +118,7 @@ class App(QMainWindow):
             print(f"Ошибка подключения к базе данных: {e}")
             return False
         
-    def full_db_func(self):
+    def tech_assets_func(self):
         layout = QVBoxLayout()
 
         self.data_table = QTableWidget()
@@ -136,7 +136,7 @@ class App(QMainWindow):
 
         # Кнопка для загрузки данных
         load_data_btn = QPushButton("Загрузить данные", self)
-        load_data_btn.clicked.connect(self.load_data)
+        load_data_btn.clicked.connect(self.load_data_assets)
         layout.addWidget(load_data_btn)
 
         self.import_txt_btn = QPushButton("Импортировать данные из TXT")
@@ -149,7 +149,97 @@ class App(QMainWindow):
         self.setCentralWidget(container)
 
         # Загрузка данных из базы
-        self.load_data()
+        self.load_data_assets()
+
+    def tech_types_db_func(self):
+        layout = QVBoxLayout()
+
+        self.data_table = QTableWidget()
+        self.data_table.setColumnCount(10)
+        self.data_table.setHorizontalHeaderLabels([
+            "old_id", "type_tech", "additional_type", "visible", "type_of_tech", "brand", "model", "category", "serNumb", "service_amount"
+        ])
+        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.data_table.cellClicked.connect(self.on_cell_click)
+        layout.addWidget(self.data_table)
+
+        # Кнопка для загрузки данных
+        load_data_btn = QPushButton("Загрузить данные", self)
+        load_data_btn.clicked.connect(self.load_data_types)
+        layout.addWidget(load_data_btn)
+
+        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
+        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
+        layout.addWidget(self.import_txt_btn)
+
+        # Контейнер для размещения всего интерфейса
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        # Загрузка данных из базы
+        self.load_data_types()
+    
+    def history_user_db_func(self):
+        layout = QVBoxLayout()
+
+        self.data_table = QTableWidget()
+        self.data_table.setColumnCount(5)
+        self.data_table.setHorizontalHeaderLabels([
+            "old_id", "date", "type", "user", "description_of_change"
+        ])
+        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.data_table.cellClicked.connect(self.on_cell_click)
+        layout.addWidget(self.data_table)
+
+        # Кнопка для загрузки данных
+        load_data_btn = QPushButton("Загрузить данные", self)
+        load_data_btn.clicked.connect(self.load_data_history_user)
+        layout.addWidget(load_data_btn)
+
+        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
+        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
+        layout.addWidget(self.import_txt_btn)
+
+        # Контейнер для размещения всего интерфейса
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        # Загрузка данных из базы
+        self.load_data_history_user()
+
+    def history_db_func(self):
+        layout = QVBoxLayout()
+
+        self.data_table = QTableWidget()
+        self.data_table.setColumnCount(9)
+        self.data_table.setHorizontalHeaderLabels([
+            "old_id", "date", "type_of_action", "who_add_to_db", "tech_move", "where_moved", "from_moved", "ticket", "description"
+        ])
+        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.data_table.cellClicked.connect(self.on_cell_click)
+        layout.addWidget(self.data_table)
+
+        # Кнопка для загрузки данных
+        load_data_btn = QPushButton("Загрузить данные", self)
+        load_data_btn.clicked.connect(self.load_data_history)
+        layout.addWidget(load_data_btn)
+
+        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
+        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
+        layout.addWidget(self.import_txt_btn)
+
+        # Контейнер для размещения всего интерфейса
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        # Загрузка данных из базы
+        self.load_data_history()
 
     def move_action_func(self):
 
@@ -163,6 +253,19 @@ class App(QMainWindow):
         grid.addWidget(QLabel("Объект"), 0, 0)
         self.fio_input = QComboBox()
         grid.addWidget(self.fio_input, 1, 0)
+
+        try:
+            conn = sqlite3.connect('Database.db')
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT serial_number FROM Table_Devices ORDER BY serial_number ASC")
+            items = cursor.fetchall()
+            for item in items:
+                self.fio_input.addItem(str(item[0]))
+            cursor.close()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Ошибка при загрузке техники: {e}")
+
 
         grid.addWidget(QLabel("Объект"), 0, 2)
         self.fio_output = QComboBox()
@@ -271,16 +374,24 @@ class App(QMainWindow):
         tech_action = QAction("Техника", self)
         employee_action = QAction("Сотрудник", self)
         add_action = QAction("Добавление", self)
-        full_db_action = QAction("Таблица БД", self)
-
-        full_db_action.triggered.connect(self.full_db_func)
+        tech_assets_action = QAction("Таблица БД", self)
+        tech_types_db_action = QAction("Категории техники", self)
+        history_action = QAction("История", self) 
+        history_user_action = QAction("Ист. польз.", self)
+        tech_types_db_action.triggered.connect(self.tech_types_db_func)
+        tech_assets_action.triggered.connect(self.tech_assets_func)
         move_action.triggered.connect(self.move_action_func)
+        history_action.triggered.connect(self.history_db_func)
+        history_user_action.triggered.connect(self.history_user_db_func)
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
         toolbar.addAction(employee_action)
         toolbar.addAction(add_action)
-        toolbar.addAction(full_db_action)
+        toolbar.addAction(tech_assets_action)
+        toolbar.addAction(tech_types_db_action)
+        toolbar.addAction(history_action)
+        toolbar.addAction(history_user_action)
 
         # Таблица для отображения данных
         # self.data_table = QTableWidget()
@@ -320,7 +431,7 @@ class App(QMainWindow):
                 lines = file.readlines()
 
             # Подключаемся к базе данных SQLite
-            conn = sqlite3.connect('tech_assets.db')
+            conn = sqlite3.connect('Database.db')
             cursor = conn.cursor()
 
             for line in lines:
@@ -364,10 +475,77 @@ class App(QMainWindow):
         except Exception as e:
             print(f"Ошибка при импорте данных: {e}")
 
-
-    def load_data(self):
+    def load_data_history_user(self):
         try:
-            conn = sqlite3.connect('tech_assets.db')  # Подключение к базе данных SQLite
+            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
+            cursor = conn.cursor()
+            
+            # Запрос без id
+            query = """SELECT old_id, date, type, user, description_of_change FROM history_user"""
+            cursor.execute(query)
+            records = cursor.fetchall()
+            
+            self.data_table.setRowCount(len(records))
+            self.data_table.setColumnCount(len(records[0]) if records else 0)  # Устанавливаем количество колонок
+            
+            for row_idx, row_data in enumerate(records):
+                for col_idx, col_data in enumerate(row_data):
+                    self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(col_data)))
+            
+            cursor.close()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Ошибка подключения к базе данных: {e}")
+
+    def load_data_history(self):
+        try:
+            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
+            cursor = conn.cursor()
+            
+            # Запрос без id
+            query = """SELECT old_id, date, type_of_action, who_add_to_db, tech_move, where_moved, from_moved, 
+            ticket, description FROM History"""
+            cursor.execute(query)
+            records = cursor.fetchall()
+            
+            self.data_table.setRowCount(len(records))
+            self.data_table.setColumnCount(len(records[0]) if records else 0)  # Устанавливаем количество колонок
+            
+            for row_idx, row_data in enumerate(records):
+                for col_idx, col_data in enumerate(row_data):
+                    self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(col_data)))
+            
+            cursor.close()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Ошибка подключения к базе данных: {e}")
+
+    def load_data_types(self):
+        try:
+            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
+            cursor = conn.cursor()
+            
+            # Запрос без id
+            query = """SELECT old_id, type_tech, additional_type, visible, type_of_tech, brand, model, 
+            category, serNumb, service_amount FROM tech_types"""
+            cursor.execute(query)
+            records = cursor.fetchall()
+            
+            self.data_table.setRowCount(len(records))
+            self.data_table.setColumnCount(len(records[0]) if records else 0)  # Устанавливаем количество колонок
+            
+            for row_idx, row_data in enumerate(records):
+                for col_idx, col_data in enumerate(row_data):
+                    self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(col_data)))
+            
+            cursor.close()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Ошибка подключения к базе данных: {e}")
+
+    def load_data_assets(self):
+        try:
+            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
             cursor = conn.cursor()
             
             # Запрос без id
@@ -389,9 +567,10 @@ class App(QMainWindow):
             conn.close()
         except sqlite3.Error as e:
             print(f"Ошибка подключения к базе данных: {e}")
+               
 
 
-    def on_cell_click(self, row, column):
+    def on_cell_click(self, row, col):
         """Когда ячейка таблицы выбрана, открываем диалог с данными"""
         row_data = []
         for col in range(self.data_table.columnCount()):
@@ -413,7 +592,7 @@ class App(QMainWindow):
                 updated_data.append(self.edit_fields[field].text())
             
             # Сохранение изменений в базе данных
-            conn = sqlite3.connect('tech_assets.db')
+            conn = sqlite3.connect('Database.db')
             cursor = conn.cursor()
 
             # Формируем запрос для обновления данных
@@ -435,7 +614,7 @@ class App(QMainWindow):
             print("Данные успешно обновлены!")
 
             # Перезагружаем данные в таблицу
-            self.load_data()
+            self.load_data_assets()
 
         except sqlite3.Error as e:
             print(f"Ошибка при сохранении данных: {e}")
@@ -448,7 +627,7 @@ class App(QMainWindow):
                 lines = file.readlines()
 
             # Подключаемся к базе данных SQLite
-            conn = sqlite3.connect('tech_assets.db')
+            conn = sqlite3.connect('Database.db')
             cursor = conn.cursor()
 
             for line in lines:

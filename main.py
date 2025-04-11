@@ -8,6 +8,50 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 import sqlite3
 
+arr_assets = [
+            "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
+            "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
+            "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
+            "project", "visible", "reserve"
+        ]
+
+query_assets = """SELECT old_id, serial_number, device_type, year_of_release, date_of_supply, 
+                            owner_of_device, assigned_to, status, condition, inv_number, 
+                            supplier, price, ship_number, full_device_data, description, characteristics, 
+                            project, visible, reserve FROM Table_Devices"""
+
+arr_tech_types = [
+            "old_id", "type_tech", "additional_type", "visible", "type_of_tech", "brand", "model", "category", "serNumb", "service_amount"
+        ]
+
+query_tech_types = """SELECT old_id, type_tech, additional_type, visible, type_of_tech, brand, model, 
+            category, serNumb, service_amount FROM tech_types"""
+
+arr_history_user = [
+            "old_id", "date", "type", "user", "description_of_change"
+        ]
+
+query_history_user = """SELECT old_id, date, type, user, description_of_change FROM history_user"""
+
+arr_history = [
+            "old_id", "date", "type_of_action", "who_add_to_db", "tech_move", "where_moved", "from_moved", "ticket", "description"
+        ]
+
+query_history = """SELECT old_id, date, type_of_action, who_add_to_db, tech_move, where_moved, from_moved, 
+            ticket, description FROM History"""
+
+arr_it_users = ["role", "active", "username", "name_initials", "full_name"]
+
+query_it_users = """SELECT role, active, username, name_initials, full_name FROM it_users"""
+
+arr_ckr_users = ["old_id","last_name","first_name","patronymic","company","unit1","unit2","unit3","unit4", "unit5","unit6",
+                "status","position","city","address","tabel_num","supervisor","email","room","description","category","type_of_user",
+                "full_name_tabel"]
+
+query_ckr_users = """SELECT old_id,last_name,first_name,patronymic,company,unit1,unit2,unit3,unit4,unit5,unit6,
+                status,position,city,address,tabel_num,supervisor,email,room,description,category,type_of_user,
+                full_name_tabel FROM CKR_users"""
+
 class EditDialog(QDialog):
     def __init__(self, row_data, parent=None):
         super().__init__(parent)
@@ -103,6 +147,7 @@ class App(QMainWindow):
         else:
             self.label_user.setText("Ошибка авторизации")
     
+
     def check_user_credentials(self, username, password):
         try:
             conn = sqlite3.connect('Database.db')  # Подключение к базе SQLite
@@ -118,30 +163,66 @@ class App(QMainWindow):
             print(f"Ошибка подключения к базе данных: {e}")
             return False
         
-    def tech_assets_func(self):
+
+    def fullUI(self):
         layout = QVBoxLayout()
 
-        self.data_table = QTableWidget()
-        self.data_table.setColumnCount(19)
-        self.data_table.setHorizontalHeaderLabels([
-            "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
-            "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
-            "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
-            "project", "visible", "reserve"
-        ])
-        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.data_table.cellClicked.connect(self.on_cell_click)
-        layout.addWidget(self.data_table)
+        # Добавляем Toolbar
+        toolbar = QToolBar("Основное меню")
+        self.addToolBar(toolbar)
 
-        # Кнопка для загрузки данных
-        load_data_btn = QPushButton("Загрузить данные", self)
-        load_data_btn.clicked.connect(self.load_data_assets)
-        layout.addWidget(load_data_btn)
+        move_action = QAction("Движение", self)
+        store_action = QAction("Склад", self)
+        tech_action = QAction("Техника", self)
+        employee_action = QAction("Сотрудник", self)
+        add_action = QAction("Добавление", self)
+        tech_assets_action = QAction("Таблица БД", self)
+        tech_types_db_action = QAction("Категории техники", self)
+        history_action = QAction("История", self) 
+        history_user_action = QAction("Ист. польз.", self)
+        it_users_action =  QAction("Сотруд. ИТ", self)
+        ckr_users_action = QAction("Пользователи", self)
+        tech_types_db_action.triggered.connect(lambda: self.show_db_func(arr_tech_types, query_tech_types))
+        tech_assets_action.triggered.connect(lambda: self.show_db_func(arr_assets, query_assets))
+        move_action.triggered.connect(self.move_action_func)
+        history_action.triggered.connect(lambda: self.show_db_func(arr_history, query_history))
+        history_user_action.triggered.connect(lambda: self.show_db_func(arr_history_user, query_history_user))
+        it_users_action.triggered.connect(lambda: self.show_db_func(arr_it_users, query_it_users))
+        ckr_users_action.triggered.connect(lambda: self.show_db_func(arr_ckr_users, query_ckr_users))
+        toolbar.addAction(move_action)
+        toolbar.addAction(store_action)
+        toolbar.addAction(tech_action)
+        toolbar.addAction(employee_action)
+        toolbar.addAction(add_action)
+        toolbar.addAction(tech_assets_action)
+        toolbar.addAction(tech_types_db_action)
+        toolbar.addAction(history_action)
+        toolbar.addAction(history_user_action)
+        toolbar.addAction(it_users_action)
+        toolbar.addAction(ckr_users_action)
 
-        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
-        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
-        layout.addWidget(self.import_txt_btn)
+        # Таблица для отображения данных
+        # self.data_table = QTableWidget()
+        # self.data_table.setColumnCount(19)
+        # self.data_table.setHorizontalHeaderLabels([
+        #     "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
+        #     "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
+        #     "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
+        #     "project", "visible", "reserve"
+        # ])
+        # self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        # self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        # self.data_table.cellClicked.connect(self.on_cell_click)
+        # layout.addWidget(self.data_table)
+
+        # # Кнопка для загрузки данных
+        # load_data_btn = QPushButton("Загрузить данные", self)
+        # load_data_btn.clicked.connect(self.load_data)
+        # layout.addWidget(load_data_btn)
+
+        # self.import_txt_btn = QPushButton("Импортировать данные из TXT")
+        # self.import_txt_btn.clicked.connect(self.import_data_from_txt)
+        # layout.addWidget(self.import_txt_btn)
 
         # Контейнер для размещения всего интерфейса
         container = QWidget()
@@ -149,16 +230,14 @@ class App(QMainWindow):
         self.setCentralWidget(container)
 
         # Загрузка данных из базы
-        self.load_data_assets()
+        # self.load_data()
 
-    def tech_types_db_func(self):
+    def show_db_func(self,array,query): # Функция по отображению всех единиц техники
         layout = QVBoxLayout()
 
         self.data_table = QTableWidget()
-        self.data_table.setColumnCount(10)
-        self.data_table.setHorizontalHeaderLabels([
-            "old_id", "type_tech", "additional_type", "visible", "type_of_tech", "brand", "model", "category", "serNumb", "service_amount"
-        ])
+        self.data_table.setColumnCount(len(array))
+        self.data_table.setHorizontalHeaderLabels(array)
         self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.data_table.cellClicked.connect(self.on_cell_click)
@@ -166,12 +245,12 @@ class App(QMainWindow):
 
         # Кнопка для загрузки данных
         load_data_btn = QPushButton("Загрузить данные", self)
-        load_data_btn.clicked.connect(self.load_data_types)
+        load_data_btn.clicked.connect(lambda: self.load_data_db(query))
         layout.addWidget(load_data_btn)
 
-        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
-        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
-        layout.addWidget(self.import_txt_btn)
+        # self.import_txt_btn = QPushButton("Импортировать данные из TXT")
+        # self.import_txt_btn.clicked.connect(self.import_data_from_txt)
+        # layout.addWidget(self.import_txt_btn)
 
         # Контейнер для размещения всего интерфейса
         container = QWidget()
@@ -179,67 +258,8 @@ class App(QMainWindow):
         self.setCentralWidget(container)
 
         # Загрузка данных из базы
-        self.load_data_types()
+        self.load_data_db(query)
     
-    def history_user_db_func(self):
-        layout = QVBoxLayout()
-
-        self.data_table = QTableWidget()
-        self.data_table.setColumnCount(5)
-        self.data_table.setHorizontalHeaderLabels([
-            "old_id", "date", "type", "user", "description_of_change"
-        ])
-        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.data_table.cellClicked.connect(self.on_cell_click)
-        layout.addWidget(self.data_table)
-
-        # Кнопка для загрузки данных
-        load_data_btn = QPushButton("Загрузить данные", self)
-        load_data_btn.clicked.connect(self.load_data_history_user)
-        layout.addWidget(load_data_btn)
-
-        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
-        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
-        layout.addWidget(self.import_txt_btn)
-
-        # Контейнер для размещения всего интерфейса
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-        # Загрузка данных из базы
-        self.load_data_history_user()
-
-    def history_db_func(self):
-        layout = QVBoxLayout()
-
-        self.data_table = QTableWidget()
-        self.data_table.setColumnCount(9)
-        self.data_table.setHorizontalHeaderLabels([
-            "old_id", "date", "type_of_action", "who_add_to_db", "tech_move", "where_moved", "from_moved", "ticket", "description"
-        ])
-        self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.data_table.cellClicked.connect(self.on_cell_click)
-        layout.addWidget(self.data_table)
-
-        # Кнопка для загрузки данных
-        load_data_btn = QPushButton("Загрузить данные", self)
-        load_data_btn.clicked.connect(self.load_data_history)
-        layout.addWidget(load_data_btn)
-
-        self.import_txt_btn = QPushButton("Импортировать данные из TXT")
-        self.import_txt_btn.clicked.connect(self.import_data_from_txt)
-        layout.addWidget(self.import_txt_btn)
-
-        # Контейнер для размещения всего интерфейса
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-        # Загрузка данных из базы
-        self.load_data_history()
 
     def move_action_func(self):
 
@@ -362,126 +382,64 @@ class App(QMainWindow):
         self.setCentralWidget(container)
         self.input_pass.returnPressed.connect(self.authenticate)
                     
-    def fullUI(self):
-        layout = QVBoxLayout()
+    
+    # def import_data_from_txt(self):
+    #     try:
+    #         # Открываем текстовый файл с кодировкой windows-1251
+    #         with open("Tab_Tehnik.txt", "r", encoding="windows-1251") as file:
+    #             lines = file.readlines()
 
-        # Добавляем Toolbar
-        toolbar = QToolBar("Основное меню")
-        self.addToolBar(toolbar)
+    #         # Подключаемся к базе данных SQLite
+    #         conn = sqlite3.connect('Database.db')
+    #         cursor = conn.cursor()
 
-        move_action = QAction("Движение", self)
-        store_action = QAction("Склад", self)
-        tech_action = QAction("Техника", self)
-        employee_action = QAction("Сотрудник", self)
-        add_action = QAction("Добавление", self)
-        tech_assets_action = QAction("Таблица БД", self)
-        tech_types_db_action = QAction("Категории техники", self)
-        history_action = QAction("История", self) 
-        history_user_action = QAction("Ист. польз.", self)
-        tech_types_db_action.triggered.connect(self.tech_types_db_func)
-        tech_assets_action.triggered.connect(self.tech_assets_func)
-        move_action.triggered.connect(self.move_action_func)
-        history_action.triggered.connect(self.history_db_func)
-        history_user_action.triggered.connect(self.history_user_db_func)
-        toolbar.addAction(move_action)
-        toolbar.addAction(store_action)
-        toolbar.addAction(tech_action)
-        toolbar.addAction(employee_action)
-        toolbar.addAction(add_action)
-        toolbar.addAction(tech_assets_action)
-        toolbar.addAction(tech_types_db_action)
-        toolbar.addAction(history_action)
-        toolbar.addAction(history_user_action)
+    #         for line in lines:
+    #             # Разделяем строку на данные по символу ";"
+    #             data = line.strip().split(';')
 
-        # Таблица для отображения данных
-        # self.data_table = QTableWidget()
-        # self.data_table.setColumnCount(19)
-        # self.data_table.setHorizontalHeaderLabels([
-        #     "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
-        #     "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
-        #     "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
-        #     "project", "visible", "reserve"
-        # ])
-        # self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        # self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        # self.data_table.cellClicked.connect(self.on_cell_click)
-        # layout.addWidget(self.data_table)
+    #             # Убираем кавычки с полей, если они есть
+    #             data = [field.replace('"', '') for field in data]
 
-        # # Кнопка для загрузки данных
-        # load_data_btn = QPushButton("Загрузить данные", self)
-        # load_data_btn.clicked.connect(self.load_data)
-        # layout.addWidget(load_data_btn)
+    #             # Если строка данных имеет меньше 19 элементов, добавляем пустые строки
+    #             if len(data) < 19:
+    #                 data.extend([''] * (19 - len(data)))  # Добавляем недостающие значения как пустые строки
+    #             elif len(data) > 19:
+    #                 data = data[:19]  # Обрезаем лишние данные, если их больше
 
-        # self.import_txt_btn = QPushButton("Импортировать данные из TXT")
-        # self.import_txt_btn.clicked.connect(self.import_data_from_txt)
-        # layout.addWidget(self.import_txt_btn)
+    #             # Преобразуем цену в формат с точкой вместо запятой (если это необходимо)
+    #             if data[11].replace(',', '').replace('.', '').isdigit():
+    #                 data[11] = data[11].replace(',', '.')  # Преобразуем цену в формат с точкой
 
-        # Контейнер для размещения всего интерфейса
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
+    #             # Выводим данные для отладки
+    #             print(data)
 
-        # Загрузка данных из базы
-        # self.load_data()
+    #             # Вставка данных в базу данных
+    #             cursor.execute("""
+    #                 INSERT INTO Table_Devices (
+    #                     old_id, serial_number, device_type, year_of_release, date_of_supply, 
+    #                     owner_of_device, assigned_to, status, condition, inv_number, 
+    #                     supplier, price, ship_number, full_device_data, description, characteristics, 
+    #                     project, visible, reserve
+    #                 ) 
+    #                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    #             """, tuple(data))
 
-    def import_data_from_txt(self):
-        try:
-            # Открываем текстовый файл с кодировкой windows-1251
-            with open("Tab_Tehnik.txt", "r", encoding="windows-1251") as file:
-                lines = file.readlines()
+    #         # Сохраняем изменения в базе данных и закрываем соединение
+    #         conn.commit()
+    #         cursor.close()
+    #         conn.close()
 
-            # Подключаемся к базе данных SQLite
-            conn = sqlite3.connect('Database.db')
-            cursor = conn.cursor()
+    #         print("Данные успешно импортированы!")
 
-            for line in lines:
-                # Разделяем строку на данные по символу ";"
-                data = line.strip().split(';')
+    #     except Exception as e:
+    #         print(f"Ошибка при импорте данных: {e}")
 
-                # Убираем кавычки с полей, если они есть
-                data = [field.replace('"', '') for field in data]
-
-                # Если строка данных имеет меньше 19 элементов, добавляем пустые строки
-                if len(data) < 19:
-                    data.extend([''] * (19 - len(data)))  # Добавляем недостающие значения как пустые строки
-                elif len(data) > 19:
-                    data = data[:19]  # Обрезаем лишние данные, если их больше
-
-                # Преобразуем цену в формат с точкой вместо запятой (если это необходимо)
-                if data[11].replace(',', '').replace('.', '').isdigit():
-                    data[11] = data[11].replace(',', '.')  # Преобразуем цену в формат с точкой
-
-                # Выводим данные для отладки
-                print(data)
-
-                # Вставка данных в базу данных
-                cursor.execute("""
-                    INSERT INTO Table_Devices (
-                        old_id, serial_number, device_type, year_of_release, date_of_supply, 
-                        owner_of_device, assigned_to, status, condition, inv_number, 
-                        supplier, price, ship_number, full_device_data, description, characteristics, 
-                        project, visible, reserve
-                    ) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, tuple(data))
-
-            # Сохраняем изменения в базе данных и закрываем соединение
-            conn.commit()
-            cursor.close()
-            conn.close()
-
-            print("Данные успешно импортированы!")
-
-        except Exception as e:
-            print(f"Ошибка при импорте данных: {e}")
-
-    def load_data_history_user(self):
+    def load_data_db(self, query):
         try:
             conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
             cursor = conn.cursor()
             
             # Запрос без id
-            query = """SELECT old_id, date, type, user, description_of_change FROM history_user"""
             cursor.execute(query)
             records = cursor.fetchall()
             
@@ -496,78 +454,6 @@ class App(QMainWindow):
             conn.close()
         except sqlite3.Error as e:
             print(f"Ошибка подключения к базе данных: {e}")
-
-    def load_data_history(self):
-        try:
-            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
-            cursor = conn.cursor()
-            
-            # Запрос без id
-            query = """SELECT old_id, date, type_of_action, who_add_to_db, tech_move, where_moved, from_moved, 
-            ticket, description FROM History"""
-            cursor.execute(query)
-            records = cursor.fetchall()
-            
-            self.data_table.setRowCount(len(records))
-            self.data_table.setColumnCount(len(records[0]) if records else 0)  # Устанавливаем количество колонок
-            
-            for row_idx, row_data in enumerate(records):
-                for col_idx, col_data in enumerate(row_data):
-                    self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(col_data)))
-            
-            cursor.close()
-            conn.close()
-        except sqlite3.Error as e:
-            print(f"Ошибка подключения к базе данных: {e}")
-
-    def load_data_types(self):
-        try:
-            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
-            cursor = conn.cursor()
-            
-            # Запрос без id
-            query = """SELECT old_id, type_tech, additional_type, visible, type_of_tech, brand, model, 
-            category, serNumb, service_amount FROM tech_types"""
-            cursor.execute(query)
-            records = cursor.fetchall()
-            
-            self.data_table.setRowCount(len(records))
-            self.data_table.setColumnCount(len(records[0]) if records else 0)  # Устанавливаем количество колонок
-            
-            for row_idx, row_data in enumerate(records):
-                for col_idx, col_data in enumerate(row_data):
-                    self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(col_data)))
-            
-            cursor.close()
-            conn.close()
-        except sqlite3.Error as e:
-            print(f"Ошибка подключения к базе данных: {e}")
-
-    def load_data_assets(self):
-        try:
-            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
-            cursor = conn.cursor()
-            
-            # Запрос без id
-            query = """SELECT old_id, serial_number, device_type, year_of_release, date_of_supply, 
-                            owner_of_device, assigned_to, status, condition, inv_number, 
-                            supplier, price, ship_number, full_device_data, description, characteristics, 
-                            project, visible, reserve FROM Table_Devices"""
-            cursor.execute(query)
-            records = cursor.fetchall()
-            
-            self.data_table.setRowCount(len(records))
-            self.data_table.setColumnCount(len(records[0]) if records else 0)  # Устанавливаем количество колонок
-            
-            for row_idx, row_data in enumerate(records):
-                for col_idx, col_data in enumerate(row_data):
-                    self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(col_data)))
-            
-            cursor.close()
-            conn.close()
-        except sqlite3.Error as e:
-            print(f"Ошибка подключения к базе данных: {e}")
-               
 
 
     def on_cell_click(self, row, col):
@@ -620,58 +506,58 @@ class App(QMainWindow):
             print(f"Ошибка при сохранении данных: {e}")
 
 
-    def import_data_from_txt(self):
-        try:
-            # Открываем текстовый файл с кодировкой windows-1251
-            with open("Tab_Tehnik.txt", "r", encoding="windows-1251") as file:
-                lines = file.readlines()
+    # def import_data_from_txt(self):
+    #     try:
+    #         # Открываем текстовый файл с кодировкой windows-1251
+    #         with open("Tab_Tehnik.txt", "r", encoding="windows-1251") as file:
+    #             lines = file.readlines()
 
-            # Подключаемся к базе данных SQLite
-            conn = sqlite3.connect('Database.db')
-            cursor = conn.cursor()
+    #         # Подключаемся к базе данных SQLite
+    #         conn = sqlite3.connect('Database.db')
+    #         cursor = conn.cursor()
 
-            for line in lines:
-                # Разделяем строку на данные по символу ";"
-                data = line.strip().split(';')
+    #         for line in lines:
+    #             # Разделяем строку на данные по символу ";"
+    #             data = line.strip().split(';')
 
-                # Убираем кавычки с полей, если они есть
-                data = [field.replace('"', '') for field in data]
+    #             # Убираем кавычки с полей, если они есть
+    #             data = [field.replace('"', '') for field in data]
 
-                # Удостоверимся, что строка данных имеет 19 элементов
-                if len(data) < 19:
-                    # Добавляем пустые строки для недостающих данных
-                    data.extend([''] * (19 - len(data)))
-                elif len(data) > 19:
-                    # Обрезаем лишние данные, если их больше
-                    data = data[:19]
+    #             # Удостоверимся, что строка данных имеет 19 элементов
+    #             if len(data) < 19:
+    #                 # Добавляем пустые строки для недостающих данных
+    #                 data.extend([''] * (19 - len(data)))
+    #             elif len(data) > 19:
+    #                 # Обрезаем лишние данные, если их больше
+    #                 data = data[:19]
 
-                # Преобразуем цену в формат с точкой вместо запятой (если это необходимо)
-                if data[11].replace(',', '').replace('.', '').isdigit():
-                    data[11] = data[11].replace(',', '.')  # Преобразуем цену в формат с точкой
+    #             # Преобразуем цену в формат с точкой вместо запятой (если это необходимо)
+    #             if data[11].replace(',', '').replace('.', '').isdigit():
+    #                 data[11] = data[11].replace(',', '.')  # Преобразуем цену в формат с точкой
 
-                # Выводим данные для отладки
-                print(data)
+    #             # Выводим данные для отладки
+    #             print(data)
 
-                # Вставка данных в базу данных
-                cursor.execute("""
-                    INSERT INTO Table_Devices (
-                        old_id, serial_number, device_type, year_of_release, date_of_supply, 
-                        owner_of_device, assigned_to, status, condition, inv_number, 
-                        supplier, price, ship_number, full_device_data, description, characteristics, 
-                        project, visible, reserve
-                    ) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, tuple(data))
+    #             # Вставка данных в базу данных
+    #             cursor.execute("""
+    #                 INSERT INTO Table_Devices (
+    #                     old_id, serial_number, device_type, year_of_release, date_of_supply, 
+    #                     owner_of_device, assigned_to, status, condition, inv_number, 
+    #                     supplier, price, ship_number, full_device_data, description, characteristics, 
+    #                     project, visible, reserve
+    #                 ) 
+    #                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    #             """, tuple(data))
 
-            # Сохраняем изменения в базе данных и закрываем соединение
-            conn.commit()
-            cursor.close()
-            conn.close()
+    #         # Сохраняем изменения в базе данных и закрываем соединение
+    #         conn.commit()
+    #         cursor.close()
+    #         conn.close()
 
-            print("Данные успешно импортированы!")
+    #         print("Данные успешно импортированы!")
 
-        except Exception as e:
-            print(f"Ошибка при импорте данных: {e}")
+    #     except Exception as e:
+    #         print(f"Ошибка при импорте данных: {e}")
 
 
 if __name__ == "__main__":

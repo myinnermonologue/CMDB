@@ -1,13 +1,13 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QLineEdit, QComboBox, QCheckBox,
-    QVBoxLayout, QWidget, QPushButton, QCompleter, QAbstractItemView, QTabWidget,
-    QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit
+    QVBoxLayout, QWidget, QPushButton, QCompleter, QListWidget, QAbstractItemView,
+    QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit,QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 import sqlite3
-
+from datetime import datetime
 arr_assets = [
             "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
             "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
@@ -116,6 +116,7 @@ class EditDialog(QDialog):
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.current_user = None
         self.setWindowTitle("CSC_CMDB")
         self.setGeometry(100, 100, 100, 100)
         self.authUI()
@@ -126,6 +127,7 @@ class App(QMainWindow):
         password = self.input_pass.text()
         
         if self.check_user_credentials(user, password):
+            self.current_user = user  # сохраняем имя пользователя
             self.label_user.setText("Доступ разрешен")
             self.setGeometry(100, 100, 600, 400)
             self.fullUI()
@@ -186,36 +188,10 @@ class App(QMainWindow):
         toolbar.addAction(it_users_action)
         toolbar.addAction(ckr_users_action)
 
-        # Таблица для отображения данных
-        # self.data_table = QTableWidget()
-        # self.data_table.setColumnCount(19)
-        # self.data_table.setHorizontalHeaderLabels([
-        #     "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
-        #     "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
-        #     "supplier", "price", "ship_number", "full_device_data", "description", "characteristics", 
-        #     "project", "visible", "reserve"
-        # ])
-        # self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        # self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        # self.data_table.cellClicked.connect(self.on_cell_click)
-        # layout.addWidget(self.data_table)
-
-        # # Кнопка для загрузки данных
-        # load_data_btn = QPushButton("Загрузить данные", self)
-        # load_data_btn.clicked.connect(self.load_data)
-        # layout.addWidget(load_data_btn)
-
-        # self.import_txt_btn = QPushButton("Импортировать данные из TXT")
-        # self.import_txt_btn.clicked.connect(self.import_data_from_txt)
-        # layout.addWidget(self.import_txt_btn)
-
         # Контейнер для размещения всего интерфейса
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
-
-        # Загрузка данных из базы
-        # self.load_data()
 
     def show_db_func(self, array, query):
         layout = QVBoxLayout()
@@ -246,32 +222,70 @@ class App(QMainWindow):
             return lowered.split("from")[1].split()[0]
         return ""
 
-    def update_device_list_left(self):
-        if not hasattr(self, 'list_left'):
-            return  # Если list_left ещё не создан — просто выходим
+    def update_device_list(self, fio_combobox, list_widget):
+        if not hasattr(self, 'fio_input') or not fio_combobox:
+            return
 
-        selected_full_name = self.fio_input.currentText()
+        selected_full_name = fio_combobox.currentText()
         if not selected_full_name:
             return
+
+        # Словарь соответствий: чекбокс -> значение в базе
+        checkbox_to_db_status = {
+            "Хранение": "хранение",
+            "Поиск": "поиск",
+            "Исправно": "исправно",
+            "Ремонт": "ремонт",
+            "Списано": "списано",
+            "Показать уволенных": "уволено",
+            "Перемещение": "перемещение",
+            "Резерв": "резерв",
+            "Не исправно": "не исправно",
+            "На списание": "списано",
+            "Утиль": "утилизировано"
+        }
 
         try:
             conn = sqlite3.connect('Database.db')
             cursor = conn.cursor()
 
-            # Получаем old_id пользователя
+            # Получаем ID пользователя
             cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (selected_full_name,))
             result = cursor.fetchone()
             if result:
                 user_old_id = result[0]
 
-                # Получаем список техники, назначенной пользователю
-                cursor.execute("SELECT full_device_data FROM Table_Devices WHERE assigned_to = ?", (user_old_id,))
-                devices = cursor.fetchall()
+                # Выбираем нужные чекбоксы
+                if fio_combobox == self.fio_input:
+                    checkboxes = self.checkboxes_left
+                else:
+                    checkboxes = self.checkboxes_right
 
-                self.list_left.clear()
+                # Собираем отмеченные статусы из чекбоксов
+                selected_statuses = [
+                    checkbox_to_db_status[cb.text()]
+                    for cb in checkboxes if cb.isChecked() and cb.text() in checkbox_to_db_status
+                ]
+
+                # Формируем SQL-запрос
+                if selected_statuses:
+                    placeholders = ','.join('?' for _ in selected_statuses)
+                    query = f"""
+                        SELECT full_device_data FROM Table_Devices 
+                        WHERE assigned_to = ? AND status IN ({placeholders})
+                    """
+                    cursor.execute(query, (user_old_id, *selected_statuses))
+                else:
+                    # Без фильтра
+                    query = "SELECT full_device_data FROM Table_Devices WHERE assigned_to = ?"
+                    cursor.execute(query, (user_old_id,))
+
+                # Обновляем список
+                devices = cursor.fetchall()
+                list_widget.clear()
                 for dev in devices:
                     if dev[0]:
-                        self.list_left.append(dev[0])
+                        list_widget.addItem(dev[0])
 
             cursor.close()
             conn.close()
@@ -292,9 +306,10 @@ class App(QMainWindow):
         grid.addWidget(QLabel("Объект"), 0, 0)
         self.fio_input = QComboBox()
         self.fio_input.setEditable(True)  # Разрешаем ввод текста
+        self.fio_input.addItem("")
         grid.addWidget(self.fio_input, 1, 0)
         # Загружаем данные
-        user_list = []
+        user_list_input = []
         try:
             conn = sqlite3.connect('Database.db')
             cursor = conn.cursor()
@@ -302,7 +317,7 @@ class App(QMainWindow):
             items = cursor.fetchall()
             for item in items:
                 if item[0]:
-                    user_list.append(str(item[0]))
+                    user_list_input.append(str(item[0]))
                     self.fio_input.addItem(str(item[0]))
             cursor.close()
             conn.close()
@@ -310,15 +325,18 @@ class App(QMainWindow):
             print(f"Ошибка при загрузке ФИО: {e}")
 
         # Настраиваем автодополнение
-        completer = QCompleter(user_list, self.fio_input)
+        completer = QCompleter(user_list_input, self.fio_input)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.fio_input.setCompleter(completer)
 
         grid.addWidget(QLabel("Объект"), 0, 2)
         self.fio_output = QComboBox()
+        self.fio_output.setEditable(True)
+        self.fio_output.addItem("")
         grid.addWidget(self.fio_output, 1, 2)
-
+        # Загружаем данные
+        user_list_output = []
         try:
             conn = sqlite3.connect('Database.db')
             cursor = conn.cursor()
@@ -326,12 +344,24 @@ class App(QMainWindow):
             items = cursor.fetchall()
             for item in items:
                 if item[0]:
+                    user_list_output.append(str(item[0]))
                     self.fio_output.addItem(str(item[0]))
             cursor.close()
             conn.close()
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке ФИО: {e}")
-        self.fio_input.currentIndexChanged.connect(self.update_device_list_left)
+        # Настраиваем автодополнение
+        completer_output = QCompleter(user_list_output, self.fio_output)
+        completer_output.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer_output.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.fio_output.setCompleter(completer_output)
+
+        self.fio_input.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
+        self.fio_output.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
+
+        
+        
+        
         grid.addWidget(QLabel("№ обращения"), 2, 0)
         self.request_input = QLineEdit()
         grid.addWidget(self.request_input, 3, 0)
@@ -341,8 +371,10 @@ class App(QMainWindow):
         grid.addWidget(self.comment_input, 5, 0)
         self.comment_input.setFixedHeight(60)
         # Списки
-        self.list_left = QTextEdit()
-        self.list_right = QTextEdit()
+        self.list_left = QListWidget()
+        self.list_right = QListWidget()
+        self.list_left.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self.list_right.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         grid.addWidget(self.list_left, 6, 0)
         grid.addWidget(self.list_right, 6, 2)
 
@@ -392,6 +424,105 @@ class App(QMainWindow):
         # Добавляем сетку в основной макет
         main_layout.addLayout(grid)
         self.setCentralWidget(main_widget)
+        for cb in self.checkboxes_left:
+            cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_input, self.list_left))
+        for cb in self.checkboxes_right:
+            cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_output, self.list_right))
+        self.move_right_btn.clicked.connect(self.move_device_between_users)
+
+        
+
+    def move_device_between_users(self):
+        selected_items = self.list_left.selectedItems()
+
+        if not self.fio_input.currentText().strip():
+            QMessageBox.warning(self, "Ошибка", "Не выбран отправитель (слева).")
+            return
+
+        if not self.fio_output.currentText().strip():
+            QMessageBox.warning(self, "Ошибка", "Не выбран получатель (справа).")
+            return
+
+        if not selected_items:
+            QMessageBox.information(self, "Внимание", "Не выбрана техника для перемещения.")
+            return
+
+        try:
+            conn = sqlite3.connect('Database.db')
+            cursor = conn.cursor()
+
+            # Получаем ID пользователей (от кого -> кому)
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (self.fio_input.currentText(),))
+            from_user_id = cursor.fetchone()
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (self.fio_output.currentText(),))
+            to_user_id = cursor.fetchone()
+
+            if not from_user_id or not to_user_id:
+                QMessageBox.critical(self, "Ошибка", "Не удалось получить ID пользователей.")
+                return
+
+            from_id = from_user_id[0]
+            to_id = to_user_id[0]
+
+            now = datetime.now()
+            now_str = f"{now.day}.{now.month}.{now.year} {now.hour}:{now.minute}:{now.second}"
+            user_name = self.current_user
+            ticket = self.request_input.text()
+            comment = self.comment_input.toPlainText()
+
+            for selected_item in selected_items:
+                selected_text = selected_item.text()
+
+                # Найдём ID техники
+                cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ? AND assigned_to = ?", (selected_text, from_id))
+                device_id_row = cursor.fetchone()
+
+                if not device_id_row:
+                    print(f"Техника '{selected_text}' не найдена.")
+                    continue
+
+                device_id = device_id_row[0]
+
+                # Обновляем владельца в Table_Devices
+                cursor.execute("UPDATE Table_Devices SET assigned_to = ? WHERE old_id = ?", (to_id, device_id))
+
+                # Получаем следующий old_id для истории
+                cursor.execute("SELECT old_id FROM History")
+                rows = cursor.fetchall()
+
+                valid_ids = []
+                for row in rows:
+                    try:
+                        valid_ids.append(int(row[0]))
+                    except (TypeError, ValueError):
+                        continue
+
+                next_old_id = max(valid_ids) + 1 if valid_ids else 1
+
+                # Добавляем запись в History
+                cursor.execute("""
+                    INSERT INTO History (
+                        old_id, date, type_of_action, who_add_to_db,
+                        tech_move, where_moved, from_moved, ticket, description
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (next_old_id, now_str, comment, user_name, device_id, to_id, from_id, ticket, comment))
+
+                # Обновляем интерфейс
+                self.list_right.addItem(selected_text)
+                self.list_left.takeItem(self.list_left.row(selected_item))
+
+            conn.commit()
+            QMessageBox.information(self, "Успешно", "Техника успешно перемещена.")
+
+        except sqlite3.Error as e:
+            QMessageBox.critical(self, "Ошибка базы данных", f"Ошибка при перемещении техники:\n{str(e)}")
+
+        finally:
+            try:
+                cursor.close()
+                conn.close()
+            except:
+                pass
 
     def authUI(self):
         layout = QVBoxLayout()
@@ -422,58 +553,6 @@ class App(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
         self.input_pass.returnPressed.connect(self.authenticate)
-                    
-    
-    # def import_data_from_txt(self):
-    #     try:
-    #         # Открываем текстовый файл с кодировкой windows-1251
-    #         with open("Tab_Tehnik.txt", "r", encoding="windows-1251") as file:
-    #             lines = file.readlines()
-
-    #         # Подключаемся к базе данных SQLite
-    #         conn = sqlite3.connect('Database.db')
-    #         cursor = conn.cursor()
-
-    #         for line in lines:
-    #             # Разделяем строку на данные по символу ";"
-    #             data = line.strip().split(';')
-
-    #             # Убираем кавычки с полей, если они есть
-    #             data = [field.replace('"', '') for field in data]
-
-    #             # Если строка данных имеет меньше 19 элементов, добавляем пустые строки
-    #             if len(data) < 19:
-    #                 data.extend([''] * (19 - len(data)))  # Добавляем недостающие значения как пустые строки
-    #             elif len(data) > 19:
-    #                 data = data[:19]  # Обрезаем лишние данные, если их больше
-
-    #             # Преобразуем цену в формат с точкой вместо запятой (если это необходимо)
-    #             if data[11].replace(',', '').replace('.', '').isdigit():
-    #                 data[11] = data[11].replace(',', '.')  # Преобразуем цену в формат с точкой
-
-    #             # Выводим данные для отладки
-    #             print(data)
-
-    #             # Вставка данных в базу данных
-    #             cursor.execute("""
-    #                 INSERT INTO Table_Devices (
-    #                     old_id, serial_number, device_type, year_of_release, date_of_supply, 
-    #                     owner_of_device, assigned_to, status, condition, inv_number, 
-    #                     supplier, price, ship_number, full_device_data, description, characteristics, 
-    #                     project, visible, reserve
-    #                 ) 
-    #                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    #             """, tuple(data))
-
-    #         # Сохраняем изменения в базе данных и закрываем соединение
-    #         conn.commit()
-    #         cursor.close()
-    #         conn.close()
-
-    #         print("Данные успешно импортированы!")
-
-    #     except Exception as e:
-    #         print(f"Ошибка при импорте данных: {e}")
 
     def load_data_db(self, query):
         try:
@@ -544,60 +623,6 @@ class App(QMainWindow):
 
         except sqlite3.Error as e:
             print(f"Ошибка при сохранении данных: {e}")
-
-
-    # def import_data_from_txt(self):
-    #     try:
-    #         # Открываем текстовый файл с кодировкой windows-1251
-    #         with open("Tab_Tehnik.txt", "r", encoding="windows-1251") as file:
-    #             lines = file.readlines()
-
-    #         # Подключаемся к базе данных SQLite
-    #         conn = sqlite3.connect('Database.db')
-    #         cursor = conn.cursor()
-
-    #         for line in lines:
-    #             # Разделяем строку на данные по символу ";"
-    #             data = line.strip().split(';')
-
-    #             # Убираем кавычки с полей, если они есть
-    #             data = [field.replace('"', '') for field in data]
-
-    #             # Удостоверимся, что строка данных имеет 19 элементов
-    #             if len(data) < 19:
-    #                 # Добавляем пустые строки для недостающих данных
-    #                 data.extend([''] * (19 - len(data)))
-    #             elif len(data) > 19:
-    #                 # Обрезаем лишние данные, если их больше
-    #                 data = data[:19]
-
-    #             # Преобразуем цену в формат с точкой вместо запятой (если это необходимо)
-    #             if data[11].replace(',', '').replace('.', '').isdigit():
-    #                 data[11] = data[11].replace(',', '.')  # Преобразуем цену в формат с точкой
-
-    #             # Выводим данные для отладки
-    #             print(data)
-
-    #             # Вставка данных в базу данных
-    #             cursor.execute("""
-    #                 INSERT INTO Table_Devices (
-    #                     old_id, serial_number, device_type, year_of_release, date_of_supply, 
-    #                     owner_of_device, assigned_to, status, condition, inv_number, 
-    #                     supplier, price, ship_number, full_device_data, description, characteristics, 
-    #                     project, visible, reserve
-    #                 ) 
-    #                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    #             """, tuple(data))
-
-    #         # Сохраняем изменения в базе данных и закрываем соединение
-    #         conn.commit()
-    #         cursor.close()
-    #         conn.close()
-
-    #         print("Данные успешно импортированы!")
-
-    #     except Exception as e:
-    #         print(f"Ошибка при импорте данных: {e}")
 
 
 if __name__ == "__main__":

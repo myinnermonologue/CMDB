@@ -141,13 +141,15 @@ venv.bak/
 # Spyder project settings
 .spyderproject
 .spyproject
-
+Database_bkup.db
+dump.sql
+EncryptedDatabase.db
 # Rope project settings
 .ropeproject
-
+pyarmor_runtime_000000
 # mkdocs documentation
 /site
-
+/dev
 # mypy
 .mypy_cache/
 .dmypy.json

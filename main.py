@@ -6,8 +6,19 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
-import sqlite3
+from pysqlcipher3 import dbapi2 as sqlite3
 from datetime import datetime
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
+def get_db_connection():
+    CIP = os.getenv("JWGEWERGJG")
+    conn = sqlite3.connect('EncryptedDatabase.db')
+    conn.execute(f"PRAGMA key = '{CIP}'")
+    CIP = None
+    return conn
+
 arr_assets = [
             "old_id", "serial_number", "device_type", "year_of_release", "date_of_supply", 
             "owner_of_device", "assigned_to", "status", "condition", "inv_number", 
@@ -93,7 +104,7 @@ class EditDialog(QDialog):
         primary_value = self.row_data[0]
 
         try:
-            conn = sqlite3.connect('Database.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
 
             set_clause = ", ".join([f"{col}=?" for col in self.column_names])
@@ -137,7 +148,7 @@ class App(QMainWindow):
 
     def check_user_credentials(self, username, password):
         try:
-            conn = sqlite3.connect('Database.db')  # Подключение к базе SQLite
+            conn = get_db_connection()  # Подключение к базе SQLite
             cursor = conn.cursor()
             query = "SELECT * FROM users WHERE username = ? AND password = ?"
             cursor.execute(query, (username, password))
@@ -246,7 +257,7 @@ class App(QMainWindow):
         }
 
         try:
-            conn = sqlite3.connect('Database.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
 
             # Получаем ID пользователя
@@ -311,7 +322,7 @@ class App(QMainWindow):
         # Загружаем данные
         user_list_input = []
         try:
-            conn = sqlite3.connect('Database.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
             items = cursor.fetchall()
@@ -338,7 +349,7 @@ class App(QMainWindow):
         # Загружаем данные
         user_list_output = []
         try:
-            conn = sqlite3.connect('Database.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
             items = cursor.fetchall()
@@ -358,10 +369,8 @@ class App(QMainWindow):
 
         self.fio_input.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
         self.fio_output.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
+    
 
-        
-        
-        
         grid.addWidget(QLabel("№ обращения"), 2, 0)
         self.request_input = QLineEdit()
         grid.addWidget(self.request_input, 3, 0)
@@ -447,8 +456,13 @@ class App(QMainWindow):
             QMessageBox.information(self, "Внимание", "Не выбрана техника для перемещения.")
             return
 
+        # Проверка на пустоту поля № обращения и комментария
+        if not self.request_input.text().strip() or not self.comment_input.toPlainText().strip():
+            QMessageBox.warning(self, "Ошибка", "Поля '№ обращения' и 'Комментарий' не могут быть пустыми.")
+            return
+
         try:
-            conn = sqlite3.connect('Database.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
 
             # Получаем ID пользователей (от кого -> кому)
@@ -524,6 +538,7 @@ class App(QMainWindow):
             except:
                 pass
 
+
     def authUI(self):
         layout = QVBoxLayout()
         
@@ -556,7 +571,7 @@ class App(QMainWindow):
 
     def load_data_db(self, query):
         try:
-            conn = sqlite3.connect('Database.db')  # Подключение к базе данных SQLite
+            conn = get_db_connection()  # Подключение к базе данных SQLite
             cursor = conn.cursor()
             
             # Запрос без id
@@ -597,7 +612,7 @@ class App(QMainWindow):
                 updated_data.append(self.edit_fields[field].text())
             
             # Сохранение изменений в базе данных
-            conn = sqlite3.connect('Database.db')
+            conn = get_db_connection()
             cursor = conn.cursor()
 
             # Формируем запрос для обновления данных
@@ -626,6 +641,7 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
+    
     app = QApplication(sys.argv)
     window = App()
     window.show()

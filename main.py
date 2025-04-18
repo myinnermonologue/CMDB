@@ -2,7 +2,7 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QLineEdit, QComboBox, QCheckBox,
     QVBoxLayout, QWidget, QPushButton, QCompleter, QListWidget, QAbstractItemView,
-    QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit,QMessageBox
+    QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit,QMessageBox,QHBoxLayout
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
@@ -187,6 +187,7 @@ class App(QMainWindow):
         history_user_action.triggered.connect(lambda: self.show_db_func(arr_history_user, query_history_user))
         it_users_action.triggered.connect(lambda: self.show_db_func(arr_it_users, query_it_users))
         ckr_users_action.triggered.connect(lambda: self.show_db_func(arr_ckr_users, query_ckr_users))
+        store_action.triggered.connect(self.store_action_func)
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
@@ -241,21 +242,17 @@ class App(QMainWindow):
         if not selected_full_name:
             return
 
-        # Словарь соответствий: чекбокс -> значение в базе
         checkbox_to_db_status = {
             "Хранение": "хранение",
-            "Поиск": "поиск",
-            "Исправно": "исправно",
-            "Ремонт": "ремонт",
-            "Списано": "списано",
-            "Показать уволенных": "уволено",
             "Перемещение": "перемещение",
-            "Резерв": "резерв",
+            "Поиск": "поиск",
+            "Ремонт": "ремонт",
+            "Утиль": "утилизировано",
+            "Исправно": "исправно",
             "Не исправно": "не исправно",
-            "На списание": "списано",
-            "Утиль": "утилизировано"
+            "На списание": "на списание",
+            "Списано": "списано"
         }
-
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
@@ -263,46 +260,234 @@ class App(QMainWindow):
             # Получаем ID пользователя
             cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (selected_full_name,))
             result = cursor.fetchone()
-            if result:
-                user_old_id = result[0]
+            if not result:
+                return
 
-                # Выбираем нужные чекбоксы
-                if fio_combobox == self.fio_input:
-                    checkboxes = self.checkboxes_left
-                else:
-                    checkboxes = self.checkboxes_right
+            user_old_id = result[0]
 
-                # Собираем отмеченные статусы из чекбоксов
-                selected_statuses = [
-                    checkbox_to_db_status[cb.text()]
-                    for cb in checkboxes if cb.isChecked() and cb.text() in checkbox_to_db_status
-                ]
+            # Определяем нужные чекбоксы
+            checkboxes = self.checkboxes_left if fio_combobox == self.fio_input else self.checkboxes_right
 
-                # Формируем SQL-запрос
-                if selected_statuses:
-                    placeholders = ','.join('?' for _ in selected_statuses)
-                    query = f"""
-                        SELECT full_device_data FROM Table_Devices 
-                        WHERE assigned_to = ? AND status IN ({placeholders})
-                    """
-                    cursor.execute(query, (user_old_id, *selected_statuses))
-                else:
-                    # Без фильтра
-                    query = "SELECT full_device_data FROM Table_Devices WHERE assigned_to = ?"
-                    cursor.execute(query, (user_old_id,))
+            selected_statuses = [
+                checkbox_to_db_status[cb.text()]
+                for cb in checkboxes if cb.isChecked() and cb.text() in checkbox_to_db_status
+            ]
 
-                # Обновляем список
-                devices = cursor.fetchall()
-                list_widget.clear()
-                for dev in devices:
-                    if dev[0]:
-                        list_widget.addItem(dev[0])
+            if selected_statuses:
+                # Создаём 2 набора плейсхолдеров
+                placeholders_status = ','.join(['?'] * len(selected_statuses))
+                placeholders_condition = ','.join(['?'] * len(selected_statuses))
+                query = f"""
+                    SELECT full_device_data FROM Table_Devices 
+                    WHERE assigned_to = ? AND (
+                        status IN ({placeholders_status}) OR 
+                        condition IN ({placeholders_condition})
+                    )
+                """
+                # параметры: user_id, значения для status, значения для condition
+                params = [user_old_id] + selected_statuses + selected_statuses
+                cursor.execute(query, params)
+            else:
+                # Без фильтра
+                query = "SELECT full_device_data FROM Table_Devices WHERE assigned_to = ?"
+                cursor.execute(query, (user_old_id,))
+
+            # Обновляем список
+            devices = cursor.fetchall()
+            list_widget.clear()
+            for dev in devices:
+                if dev[0]:
+                    list_widget.addItem(dev[0])
+
+            cursor.close()
+            conn.close()
+
+        except sqlite3.Error as e:
+            print(f"Ошибка при загрузке техники: {e}")
+
+
+
+    def store_action_func(self):
+        main_widget = QWidget()
+        main_layout = QHBoxLayout(main_widget)  # Горизонтальное разделение
+
+        # Левая вертикальная панель
+        left_panel = QVBoxLayout()
+
+        # Верх: выбор объекта
+        left_panel.addWidget(QLabel("Объект"))
+        self.fio_input = QComboBox()
+        self.fio_input.setEditable(True)
+        self.fio_input.addItem("")
+        left_panel.addWidget(self.fio_input)
+
+        user_list_input = []
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Получаем только те записи, где first_name и last_name пустые
+            cursor.execute("""
+                SELECT DISTINCT full_name_tabel 
+                FROM CKR_users 
+                WHERE (first_name IS NULL OR TRIM(first_name) = '')
+                AND (last_name IS NULL OR TRIM(last_name) = '')
+                ORDER BY full_name_tabel ASC
+            """)
+            
+            items = cursor.fetchall()
+            for item in items:
+                if item[0]:
+                    user_list_input.append(str(item[0]))
+                    self.fio_input.addItem(str(item[0]))
 
             cursor.close()
             conn.close()
         except sqlite3.Error as e:
-            print(f"Ошибка при загрузке техники: {e}")
+            print(f"Ошибка при загрузке ФИО: {e}")
 
+        completer = QCompleter(user_list_input, self.fio_input)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.fio_input.setCompleter(completer)
+
+        # Растягиваем всё, что выше чекбоксов и кнопок
+        left_panel.addStretch()
+
+        # Чекбоксы фильтрации
+        self.checkboxes_store = []
+        options = [
+            "Хранение", "Перемещение", "Поиск", "Ремонт",
+            "Утиль", "Исправно", "Не исправно",
+            "На списание", "Списано"
+        ]
+        checkbox_grid = QGridLayout()
+        row, col = 0, 0
+        for opt in options:
+            cb = QCheckBox(opt)
+            cb.setChecked(False)
+            self.checkboxes_store.append(cb)
+            checkbox_grid.addWidget(cb, row, col)
+            col += 1
+            if col >= 2:
+                col = 0
+                row += 1
+
+        left_panel.addLayout(checkbox_grid)
+
+        # Кнопки выгрузки
+        self.btn_export_all_tech = QPushButton("Выгрузить всю технику")
+        self.btn_export_all_users = QPushButton("Выгрузить всех пользователей")
+        self.btn_export_all_events = QPushButton("Выгрузить события движения")
+        self.btn_export_last_events = QPushButton("Выгрузить последние события движения")
+
+        for btn in [
+            self.btn_export_all_tech,
+            self.btn_export_all_users,
+            self.btn_export_all_events,
+            self.btn_export_last_events
+        ]:
+            btn.setFixedHeight(50)
+            left_panel.addWidget(btn)
+
+        # Правая часть — таблица
+        self.store_table = QTableWidget()
+        self.store_table.setColumnCount(4)
+        self.store_table.setHorizontalHeaderLabels(["Техника", "Статус", "Состояние", "Год выпуска"])
+        self.store_table.horizontalHeader().setStretchLastSection(True)
+        self.store_table.setColumnWidth(0, 500)
+
+        main_layout.addLayout(left_panel, 1)
+        main_layout.addWidget(self.store_table, 3)
+
+        self.setCentralWidget(main_widget)
+
+        self.fio_input.currentIndexChanged.connect(self.update_store_table)
+        for cb in self.checkboxes_store:
+            cb.stateChanged.connect(self.update_store_table)
+
+        self.store_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.store_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.store_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.store_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # !!! Должно быть StrongFocus, иначе текст не выделяется
+
+
+        
+
+    def update_store_table(self):
+        selected_full_name = self.fio_input.currentText()
+        if not selected_full_name:
+            self.store_table.setRowCount(0)
+            return
+
+        checkbox_to_status = {
+            "Хранение": "хранение",
+            "Поиск": "поиск",
+            "Исправно": "исправно",
+            "Ремонт": "ремонт",
+            "Списано": "списано",
+            "Перемещение": "перемещение",
+            "Резерв": "резерв",
+            "Не исправно": "не исправно",
+            "На списание": "на списание",
+            "Утиль": "утилизировано"
+        }
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (selected_full_name,))
+            result = cursor.fetchone()
+            if not result:
+                return
+
+            user_old_id = result[0]
+
+            # Получаем выбранные статусы из чекбоксов
+            selected_statuses = [
+                checkbox_to_status[cb.text()]
+                for cb in self.checkboxes_store
+                if cb.isChecked() and cb.text() in checkbox_to_status
+            ]
+
+            # Формируем SQL-запрос
+            if selected_statuses:
+                placeholders_status = ','.join(['?'] * len(selected_statuses))
+                placeholders_condition = ','.join(['?'] * len(selected_statuses))
+                query = f"""
+                    SELECT full_device_data, status, condition, year_of_release 
+                    FROM Table_Devices 
+                    WHERE assigned_to = ? AND (
+                        status IN ({placeholders_status}) OR
+                        condition IN ({placeholders_condition})
+                    )
+                """
+                params = [user_old_id] + selected_statuses + selected_statuses
+                cursor.execute(query, params)
+
+            else:
+                query = """
+                    SELECT full_device_data, status, condition, year_of_release 
+                    FROM Table_Devices 
+                    WHERE assigned_to = ?
+                """
+                cursor.execute(query, (user_old_id,))
+
+            records = cursor.fetchall()
+
+            self.store_table.setRowCount(len(records))
+            for row_idx, row_data in enumerate(records):
+                for col_idx, col_data in enumerate(row_data):
+                    item = QTableWidgetItem(str(col_data))
+                    item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+                    self.store_table.setItem(row_idx, col_idx, item)
+
+            cursor.close()
+            conn.close()
+
+        except sqlite3.Error as e:
+            print(f"Ошибка при загрузке техники для склада: {e}")
 
 
     def move_action_func(self):
@@ -599,7 +784,7 @@ class App(QMainWindow):
         self.edit_dialog = EditDialog(row_data, column_names, self.current_table_name, self)
         self.edit_dialog.exec()
 
-
+    
     def save_edited_data(self):
         """Функция для сохранения отредактированных данных в базе данных"""
         if self.selected_row is None:

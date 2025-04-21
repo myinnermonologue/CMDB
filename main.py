@@ -7,9 +7,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from pysqlcipher3 import dbapi2 as sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from datetime import datetime
+from pathlib import Path
+
 load_dotenv()
 
 def get_db_connection():
@@ -26,17 +31,36 @@ arr_assets = [
             "project", "visible", "reserve"
         ]
 
-query_assets = """SELECT old_id, serial_number, device_type, year_of_release, date_of_supply, 
-                            owner_of_device, assigned_to, status, condition, inv_number, 
-                            supplier, price, ship_number, full_device_data, description, characteristics, 
-                            project, visible, reserve FROM Table_Devices"""
+query_assets = """SELECT DISTINCT
+        d.old_id,
+        d.serial_number,
+        tt.type_tech AS device_type,  -- Берем из таблицы tech_types по old_id
+        d.year_of_release,
+        d.date_of_supply,
+        d.owner_of_device,
+        u.full_name_tabel AS assigned_to,   -- Из CKR_users по old_id
+        d.status,
+        d.condition,
+        d.inv_number,
+        d.supplier,
+        d.price,
+        d.ship_number,
+        d.full_device_data,
+        d.description,
+        d.characteristics,
+        d.project,
+        d.visible,
+        d.reserve
+    FROM Table_Devices d
+    LEFT JOIN tech_types tt ON d.device_type = tt.old_id  -- Связь с tech_types
+    LEFT JOIN CKR_users u ON d.assigned_to = u.old_id  """
 
 arr_tech_types = [
-            "old_id", "type_tech", "additional_type", "visible", "type_of_tech", "brand", "model", "category", "serNumb", "service_amount"
+            "old_id", "type_tech", "additional_type", "brand", "model", "category", "serNumb", "typeC", "service_amount", "visible"
         ]
 
-query_tech_types = """SELECT old_id, type_tech, additional_type, visible, type_of_tech, brand, model, 
-            category, serNumb, service_amount FROM tech_types"""
+query_tech_types = """SELECT old_id, type_tech, additional_type, brand, model, category, serNumb, 
+            typeC, service_amount, visible FROM tech_types"""
 
 arr_history_user = [
             "old_id", "date", "type", "user", "description_of_change"
@@ -48,8 +72,21 @@ arr_history = [
             "old_id", "date", "type_of_action", "who_add_to_db", "tech_move", "where_moved", "from_moved", "ticket", "description"
         ]
 
-query_history = """SELECT old_id, date, type_of_action, who_add_to_db, tech_move, where_moved, from_moved, 
-            ticket, description FROM History"""
+query_history = """
+        SELECT 
+            h.old_id,
+            h.date,
+            h.type_of_action,
+            h.who_add_to_db,
+            h.tech_move,
+            u_where.full_name_tabel AS where_moved,
+            u_from.full_name_tabel AS from_moved,
+            h.ticket,
+            h.description
+        FROM History h
+        LEFT JOIN CKR_users u_where ON h.where_moved = u_where.old_id
+        LEFT JOIN CKR_users u_from ON h.from_moved = u_from.old_id
+"""
 
 arr_it_users = ["role", "active", "username", "name_initials", "full_name"]
 
@@ -131,7 +168,10 @@ class App(QMainWindow):
         self.setWindowTitle("CSC_CMDB")
         self.setGeometry(100, 100, 100, 100)
         self.authUI()
-
+        self.records_per_page = 50  # или любое другое число
+        self.current_page = 0
+        self.total_records = 0
+        self.current_query = ""
     
     def authenticate(self):
         user = self.input_user.text()
@@ -204,6 +244,60 @@ class App(QMainWindow):
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
+    
+
+    def go_to_prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.load_data_db_with_pagination(self.current_query)
+
+    def go_to_next_page(self):
+        if (self.current_page + 1) * self.records_per_page < self.total_records:
+            self.current_page += 1
+            self.load_data_db_with_pagination(self.current_query)
+
+
+    def load_data_db_with_pagination(self, query):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            offset = self.current_page * self.records_per_page
+            paginated_query = f"{query} LIMIT {self.records_per_page} OFFSET {offset}"
+
+            cursor.execute(paginated_query)
+            records = cursor.fetchall()
+
+            self.data_table.setRowCount(len(records))
+            self.data_table.setColumnCount(len(records[0]) if records else 0)
+
+            for row_idx, row_data in enumerate(records):
+                for col_idx, col_data in enumerate(row_data):
+                    self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(col_data)))
+
+            self.page_label.setText(f"Страница {self.current_page + 1} из {max(1, (self.total_records - 1) // self.records_per_page + 1)}")
+
+            self.btn_prev.setEnabled(self.current_page > 0)
+            self.btn_next.setEnabled((self.current_page + 1) * self.records_per_page < self.total_records)
+
+            cursor.close()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Ошибка при загрузке данных с пагинацией: {e}")
+
+
+    def update_total_record_count(self, query):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            count_query = f"SELECT COUNT(*) FROM ({query})"
+            cursor.execute(count_query)
+            self.total_records = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Ошибка при подсчёте записей: {e}")
+            self.total_records = 0    
 
     def show_db_func(self, array, query):
         layout = QVBoxLayout()
@@ -216,16 +310,29 @@ class App(QMainWindow):
         self.data_table.cellClicked.connect(self.on_cell_click)
         layout.addWidget(self.data_table)
 
-        load_data_btn = QPushButton("Загрузить данные", self)
-        load_data_btn.clicked.connect(lambda: self.load_data_db(query))
-        layout.addWidget(load_data_btn)
+        # Кнопки пагинации
+        pagination_layout = QHBoxLayout()
+        self.btn_prev = QPushButton("← Назад")
+        self.btn_next = QPushButton("Вперёд →")
+        self.page_label = QLabel()
+        self.btn_prev.clicked.connect(self.go_to_prev_page)
+        self.btn_next.clicked.connect(self.go_to_next_page)
+        pagination_layout.addWidget(self.btn_prev)
+        pagination_layout.addWidget(self.page_label)
+        pagination_layout.addWidget(self.btn_next)
+        layout.addLayout(pagination_layout)
 
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
+        # Инициализация пагинации
+        self.current_query = query
         self.current_table_name = self.extract_table_name(query)
-        self.load_data_db(query)
+        self.current_page = 0
+        self.update_total_record_count(query)
+        self.load_data_db_with_pagination(query)
+        self.current_query = query
 
     def extract_table_name(self, query):
         # Простой способ вытащить имя таблицы из SELECT-запроса
@@ -377,9 +484,13 @@ class App(QMainWindow):
 
         # Кнопки выгрузки
         self.btn_export_all_tech = QPushButton("Выгрузить всю технику")
+        self.btn_export_all_tech.clicked.connect(self.export_all_tech_to_excel)
         self.btn_export_all_users = QPushButton("Выгрузить всех пользователей")
+        self.btn_export_all_users.clicked.connect(self.export_all_users_to_excel)
         self.btn_export_all_events = QPushButton("Выгрузить события движения")
+        self.btn_export_all_events.clicked.connect(self.export_all_events_to_excel)
         self.btn_export_last_events = QPushButton("Выгрузить последние события движения")
+        self.btn_export_last_events.clicked.connect(self.export_last_events_to_excel)
 
         for btn in [
             self.btn_export_all_tech,
@@ -624,7 +735,285 @@ class App(QMainWindow):
             cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_output, self.list_right))
         self.move_right_btn.clicked.connect(self.move_device_between_users)
 
-        
+    def export_all_events_to_excel(self):
+        try:
+            documents_path = Path.home() / "Documents" / "export"
+            documents_path.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            filename = documents_path / f'history_events_{timestamp}.xlsx'
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM History")
+            history_rows = cursor.fetchall()
+
+            cursor.execute("SELECT CAST(old_id AS TEXT), full_device_data FROM Table_Devices")
+            device_map = {str(row[0]): row[1] for row in cursor.fetchall()}
+
+            cursor.execute("SELECT CAST(old_id AS TEXT), full_name_tabel FROM CKR_users")
+            user_map = {str(row[0]): row[1] for row in cursor.fetchall()}
+
+            conn.close()
+
+            processed_rows = []
+            for row in history_rows:
+                if len(row) < 10:
+                    print("Пропуск строки (не хватает полей):", row)
+                    continue
+
+                try:
+                    # Извлекаем все данные, пропуская первый столбец (id)
+                    _, old_id, date, action, who_add, tech_id, where_id, from_id, ticket, desc = row
+                    print("Обработка:", row)
+
+                    tech = device_map.get(str(tech_id), "")
+                    where = user_map.get(str(where_id), "")
+                    from_ = user_map.get(str(from_id), "")
+
+                    print(f"→ tech: {tech}, where: {where}, from: {from_}")
+
+                    # если всё ок — добавляем
+                    processed_rows.append([old_id, date, action, who_add, tech, where, from_, ticket, desc])
+
+                except Exception as e:
+                    print("Ошибка в строке:", row, e)
+                    continue
+
+            headers = [
+                "old_id", "date", "type_of_action", "who_add_to_db",
+                "tech_move", "where_moved", "from_moved", "ticket", "description"
+            ]
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "История"
+            ws.append(headers)
+            for row in processed_rows:
+                ws.append(row)
+
+            # Установка ширины колонок в зависимости от содержимого
+            for col_idx, col in enumerate(ws.iter_cols(min_row=1, max_row=ws.max_row, max_col=ws.max_column), 1):
+                max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+                ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
+
+            wb.save(filename)
+            QMessageBox.information(self, "Экспорт завершён", f"Файл успешно создан:\n{str(filename)}\nКоличество записей: {len(processed_rows)}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
+
+
+
+    def export_last_events_to_excel(self):
+        try:
+            documents_path = Path.home() / "Documents" / "export"
+            documents_path.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            filename = documents_path / f'history_last_events_{timestamp}.xlsx'
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Определяем дату три месяца назад
+            three_months_ago = datetime.now() - timedelta(days=90)
+            cursor.execute("SELECT * FROM History")
+            history_rows = cursor.fetchall()
+
+            cursor.execute("SELECT CAST(old_id AS TEXT), full_device_data FROM Table_Devices")
+            device_map = {str(row[0]): row[1] for row in cursor.fetchall()}
+
+            cursor.execute("SELECT CAST(old_id AS TEXT), full_name_tabel FROM CKR_users")
+            user_map = {str(row[0]): row[1] for row in cursor.fetchall()}
+
+            conn.close()
+
+            filtered_rows = []
+            print(f"Фильтруем события с даты: {three_months_ago.strftime('%d.%m.%Y')}")  # Отладка: выводим дату фильтра
+            for row in history_rows:
+                if len(row) < 10:
+                    print("Пропуск строки (не хватает полей):", row)
+                    continue
+
+                date_value = row[1]  # Дата теперь хранится в формате "DD.MM.YYYY HH:MM:SS"
+                try:
+                    # Проверяем, что дата - строка перед разбором
+                    if isinstance(date_value, str):
+                        try:
+                            # Извлекаем только дату (без времени)
+                            event_date_str = date_value.split()[0]  # "10.1.2022" (отделяем дату от времени)
+                            event_date = datetime.strptime(event_date_str, "%d.%m.%Y")
+                            print(f"Дата события: {event_date.strftime('%d.%m.%Y')}")  # Отладка: выводим дату события
+                            if event_date >= three_months_ago:
+                                # Пропускаем первый столбец (id)
+                                id, old_id, date, action, who_add, tech_id, where_id, from_id, ticket, desc = row
+                                tech = device_map.get(str(tech_id), "")
+                                where = user_map.get(str(where_id), "")
+                                from_ = user_map.get(str(from_id), "")
+                                filtered_rows.append([id, old_id, date, action, who_add, tech, where, from_, ticket, desc])
+                        except Exception as e:
+                            print(f"Ошибка при разборе даты в строке {row}: {e}")
+                            continue
+                    else:
+                        print(f"Пропуск строки из-за некорректного значения даты: {date_value}")
+                except Exception as e:
+                    print(f"Ошибка при разборе даты в строке {row}: {e}")
+                    continue
+
+            print(f"Найдено {len(filtered_rows)} записей после фильтрации.")  # Отладка: сколько записей после фильтрации
+
+            headers = [
+                "id", "old_id", "date", "type_of_action", "who_add_to_db",
+                "tech_move", "where_moved", "from_moved", "ticket", "description"
+            ]
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Последние события"
+            ws.append(headers)
+            for row in filtered_rows:
+                ws.append(row)
+
+            # Установка ширины колонок в зависимости от содержимого
+            for col_idx, col in enumerate(ws.iter_cols(min_row=1, max_row=ws.max_row, max_col=ws.max_column), 1):
+                max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+                ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
+
+            wb.save(filename)
+            QMessageBox.information(self, "Экспорт завершён", f"Файл успешно создан:\n{str(filename)}\nКоличество записей: {len(filtered_rows)}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
+
+
+
+
+
+
+
+            
+    def export_all_users_to_excel(self):
+        try:
+            # Путь и имя файла
+            documents_path = Path.home() / "Documents" / "export"
+            documents_path.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            filename = documents_path / f'ckr_users_{timestamp}.xlsx'
+
+            # Подключение к базе
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Запрос к CKR_users
+            query = """
+                SELECT old_id, last_name, first_name, patronymic, company, unit1, unit2, unit3, unit4, unit5, unit6,
+                    status, position, city, address, tabel_num, supervisor, email, room, description, category,
+                    type_of_user, full_name_tabel
+                FROM CKR_users
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            headers = [desc[0] for desc in cursor.description]
+            conn.close()
+
+            # Создание Excel-файла
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Пользователи"
+
+            # Заголовки
+            ws.append(headers)
+
+            # Данные
+            for row in rows:
+                ws.append(row)
+
+            # Автоширина колонок
+            for col_idx, col in enumerate(ws.iter_cols(min_row=1, max_row=ws.max_row, max_col=ws.max_column), 1):
+                max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+                ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
+
+            # Сохраняем файл
+            wb.save(filename)
+
+            QMessageBox.information(self, "Экспорт завершён", f"Файл успешно создан:\n{str(filename)}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
+
+    def export_all_tech_to_excel(self):
+        try:
+            # Создаём путь и имя файла
+            documents_path = Path.home() / "Documents" / "export"
+            documents_path.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            filename = documents_path / f'tech_types_{timestamp}.xlsx'
+
+            # Подключение к базе
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Запрос к базе
+            query = """
+                SELECT DISTINCT
+                    d.old_id,
+                    d.serial_number,
+                    tt.type_tech || ' ' || tt.brand || ' ' || tt.model AS device_type,
+                    d.year_of_release,
+                    d.date_of_supply,
+                    d.owner_of_device,
+                    u.full_name_tabel AS assigned_to,
+                    d.status,
+                    d.condition,
+                    d.inv_number,
+                    d.supplier,
+                    d.price,
+                    d.ship_number,
+                    d.full_device_data,
+                    d.description,
+                    d.characteristics,
+                    d.project,
+                    d.visible,
+                    d.reserve
+                FROM Table_Devices d
+                LEFT JOIN tech_types tt ON d.device_type = tt.old_id
+                LEFT JOIN CKR_users u ON d.assigned_to = u.old_id
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            headers = [desc[0] for desc in cursor.description]
+            conn.close()
+
+            # Создание Excel
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Техника"
+
+            # Записываем заголовки
+            ws.append(headers)
+
+            # Записываем строки
+            for row in rows:
+                ws.append(row)
+
+            # Автоширина колонок
+            for col_idx, col in enumerate(ws.iter_cols(min_row=1, max_row=ws.max_row, max_col=ws.max_column), 1):
+                max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+                ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
+
+            # Сохраняем файл
+            wb.save(filename)
+
+            QMessageBox.information(
+                self,
+                "Экспорт завершён",
+                f"Файл успешно создан:\n{str(filename)}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
+
+
 
     def move_device_between_users(self):
         selected_items = self.list_left.selectedItems()

@@ -1,6 +1,6 @@
 import sys
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QLineEdit, QComboBox, QCheckBox,
+    QApplication, QMainWindow, QLabel, QLineEdit, QComboBox, QCheckBox,QFormLayout,
     QVBoxLayout, QWidget, QPushButton, QCompleter, QListWidget, QAbstractItemView,
     QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit,QMessageBox,QHBoxLayout
 )
@@ -228,6 +228,7 @@ class App(QMainWindow):
         it_users_action.triggered.connect(lambda: self.show_db_func(arr_it_users, query_it_users))
         ckr_users_action.triggered.connect(lambda: self.show_db_func(arr_ckr_users, query_ckr_users))
         store_action.triggered.connect(self.store_action_func)
+        tech_action.triggered.connect(self.technic_action_func)
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
@@ -284,7 +285,7 @@ class App(QMainWindow):
             conn.close()
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке данных с пагинацией: {e}")
-
+    
 
     def update_total_record_count(self, query):
         try:
@@ -412,7 +413,81 @@ class App(QMainWindow):
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке техники: {e}")
 
+    def technic_action_func(self):
 
+        main_layout = QHBoxLayout()
+
+        # === Левая панель (форма с информацией о технике) ===
+        left_form_layout = QFormLayout()
+        left_widget = QWidget()
+        left_widget.setFixedWidth(500)
+        left_form_layout.setVerticalSpacing(15)
+        self.where_field = QLineEdit()
+        self.serial_field = QLineEdit()
+        self.type_field = QLineEdit()
+        self.subtype_field = QLineEdit()
+        self.manufacturer_field = QLineEdit()
+        self.model_field = QLineEdit()
+        self.condition_field = QLineEdit()
+        self.status_field = QLineEdit()
+        self.inventory_field = QLineEdit()
+        self.year_field = QLineEdit()
+        self.provider_field = QLineEdit()
+        self.delivery_field = QLineEdit()
+        self.price_field = QLineEdit()
+        self.owner_field = QLineEdit()
+        self.comment_field = QLineEdit()
+
+        left_form_layout.addRow("Где находится:", self.where_field)
+        left_form_layout.addRow("Серийный:", self.serial_field)
+        left_form_layout.addRow("Тип:", self.type_field)
+        left_form_layout.addRow("Подтип:", self.subtype_field)
+        left_form_layout.addRow("Производитель:", self.manufacturer_field)
+        left_form_layout.addRow("Модель:", self.model_field)
+        left_form_layout.addRow("Состояние:", self.condition_field)
+        left_form_layout.addRow("Статус:", self.status_field)
+        left_form_layout.addRow("Инвентарный №:", self.inventory_field)
+        left_form_layout.addRow("Год выпуска:", self.year_field)
+        left_form_layout.addRow("Поставщик:", self.provider_field)
+        left_form_layout.addRow("Дата поставки:", self.delivery_field)
+        left_form_layout.addRow("Стоимость:", self.price_field)
+        left_form_layout.addRow("Собственник:", self.owner_field)
+        left_form_layout.addRow("Комментарий:", self.comment_field)
+
+        save_button = QPushButton("Сохранить изменения")
+        left_form_layout.addRow(save_button)
+
+        left_form_layout.setContentsMargins(0, 50, 0, 0)
+                # Устанавливаем выравнивание для всех меток по левому краю
+        left_form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        left_widget.setLayout(left_form_layout)
+
+        # === Правая панель ===
+        right_layout = QVBoxLayout()
+        self.devices_list = QListWidget()
+        self.devices_list.setMaximumHeight(200)  # Ограничение по высоте
+
+        self.history_table = QTableWidget()
+        self.history_table.setColumnCount(6)
+        self.history_table.setHorizontalHeaderLabels(["Дата", "Тип", "Кем", "Куда", "Основание", "Примечание"])
+        self.history_table.horizontalHeader().setStretchLastSection(True)
+        self.history_table.setMaximumHeight(200)  # Ограничение по высоте
+
+
+        right_layout.setContentsMargins(0, 0, 0, 350)
+
+        right_layout.addWidget(self.devices_list)
+        right_layout.addWidget(self.history_table)
+
+        main_layout.addWidget(left_widget)
+        main_layout.addLayout(right_layout)
+
+        central_widget = QWidget()
+        central_widget.setLayout(main_layout)
+        self.setCentralWidget(central_widget)
+
+        
 
     def store_action_func(self):
         main_widget = QWidget()
@@ -489,14 +564,14 @@ class App(QMainWindow):
         self.btn_export_all_users.clicked.connect(self.export_all_users_to_excel)
         self.btn_export_all_events = QPushButton("Выгрузить события движения")
         self.btn_export_all_events.clicked.connect(self.export_all_events_to_excel)
-        self.btn_export_last_events = QPushButton("Выгрузить последние события движения")
-        self.btn_export_last_events.clicked.connect(self.export_last_events_to_excel)
+        # self.btn_export_last_events = QPushButton("Выгрузить последние события движения")
+        # self.btn_export_last_events.clicked.connect(self.export_last_events_to_excel)
 
         for btn in [
             self.btn_export_all_tech,
             self.btn_export_all_users,
             self.btn_export_all_events,
-            self.btn_export_last_events
+            # self.btn_export_last_events
         ]:
             btn.setFixedHeight(50)
             left_panel.addWidget(btn)
@@ -805,85 +880,85 @@ class App(QMainWindow):
 
 
 
-    def export_last_events_to_excel(self):
-        try:
-            documents_path = Path.home() / "Documents" / "export"
-            documents_path.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-            filename = documents_path / f'history_last_events_{timestamp}.xlsx'
+    # def export_last_events_to_excel(self):
+    #     try:
+    #         documents_path = Path.home() / "Documents" / "export"
+    #         documents_path.mkdir(parents=True, exist_ok=True)
+    #         timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    #         filename = documents_path / f'history_last_events_{timestamp}.xlsx'
 
-            conn = get_db_connection()
-            cursor = conn.cursor()
+    #         conn = get_db_connection()
+    #         cursor = conn.cursor()
 
-            # Определяем дату три месяца назад
-            three_months_ago = datetime.now() - timedelta(days=90)
-            cursor.execute("SELECT * FROM History")
-            history_rows = cursor.fetchall()
+    #         # Определяем дату три месяца назад
+    #         three_months_ago = datetime.now() - timedelta(days=90)
+    #         cursor.execute("SELECT * FROM History")
+    #         history_rows = cursor.fetchall()
 
-            cursor.execute("SELECT CAST(old_id AS TEXT), full_device_data FROM Table_Devices")
-            device_map = {str(row[0]): row[1] for row in cursor.fetchall()}
+    #         cursor.execute("SELECT CAST(old_id AS TEXT), full_device_data FROM Table_Devices")
+    #         device_map = {str(row[0]): row[1] for row in cursor.fetchall()}
 
-            cursor.execute("SELECT CAST(old_id AS TEXT), full_name_tabel FROM CKR_users")
-            user_map = {str(row[0]): row[1] for row in cursor.fetchall()}
+    #         cursor.execute("SELECT CAST(old_id AS TEXT), full_name_tabel FROM CKR_users")
+    #         user_map = {str(row[0]): row[1] for row in cursor.fetchall()}
 
-            conn.close()
+    #         conn.close()
 
-            filtered_rows = []
-            print(f"Фильтруем события с даты: {three_months_ago.strftime('%d.%m.%Y')}")  # Отладка: выводим дату фильтра
-            for row in history_rows:
-                if len(row) < 10:
-                    print("Пропуск строки (не хватает полей):", row)
-                    continue
+    #         filtered_rows = []
+    #         print(f"Фильтруем события с даты: {three_months_ago.strftime('%d.%m.%Y')}")  # Отладка: выводим дату фильтра
+    #         for row in history_rows:
+    #             if len(row) < 10:
+    #                 print("Пропуск строки (не хватает полей):", row)
+    #                 continue
 
-                date_value = row[1]  # Дата теперь хранится в формате "DD.MM.YYYY HH:MM:SS"
-                try:
-                    # Проверяем, что дата - строка перед разбором
-                    if isinstance(date_value, str):
-                        try:
-                            # Извлекаем только дату (без времени)
-                            event_date_str = date_value.split()[0]  # "10.1.2022" (отделяем дату от времени)
-                            event_date = datetime.strptime(event_date_str, "%d.%m.%Y")
-                            print(f"Дата события: {event_date.strftime('%d.%m.%Y')}")  # Отладка: выводим дату события
-                            if event_date >= three_months_ago:
-                                # Пропускаем первый столбец (id)
-                                id, old_id, date, action, who_add, tech_id, where_id, from_id, ticket, desc = row
-                                tech = device_map.get(str(tech_id), "")
-                                where = user_map.get(str(where_id), "")
-                                from_ = user_map.get(str(from_id), "")
-                                filtered_rows.append([id, old_id, date, action, who_add, tech, where, from_, ticket, desc])
-                        except Exception as e:
-                            print(f"Ошибка при разборе даты в строке {row}: {e}")
-                            continue
-                    else:
-                        print(f"Пропуск строки из-за некорректного значения даты: {date_value}")
-                except Exception as e:
-                    print(f"Ошибка при разборе даты в строке {row}: {e}")
-                    continue
+    #             date_value = row[1]  # Дата теперь хранится в формате "DD.MM.YYYY HH:MM:SS"
+    #             try:
+    #                 # Проверяем, что дата - строка перед разбором
+    #                 if isinstance(date_value, str):
+    #                     try:
+    #                         # Извлекаем только дату (без времени)
+    #                         event_date_str = date_value.split()[0]  # "10.1.2022" (отделяем дату от времени)
+    #                         event_date = datetime.strptime(event_date_str, "%d.%m.%Y")
+    #                         print(f"Дата события: {event_date.strftime('%d.%m.%Y')}")  # Отладка: выводим дату события
+    #                         if event_date >= three_months_ago:
+    #                             # Пропускаем первый столбец (id)
+    #                             id, old_id, date, action, who_add, tech_id, where_id, from_id, ticket, desc = row
+    #                             tech = device_map.get(str(tech_id), "")
+    #                             where = user_map.get(str(where_id), "")
+    #                             from_ = user_map.get(str(from_id), "")
+    #                             filtered_rows.append([id, old_id, date, action, who_add, tech, where, from_, ticket, desc])
+    #                     except Exception as e:
+    #                         print(f"Ошибка при разборе даты в строке {row}: {e}")
+    #                         continue
+    #                 else:
+    #                     print(f"Пропуск строки из-за некорректного значения даты: {date_value}")
+    #             except Exception as e:
+    #                 print(f"Ошибка при разборе даты в строке {row}: {e}")
+    #                 continue
 
-            print(f"Найдено {len(filtered_rows)} записей после фильтрации.")  # Отладка: сколько записей после фильтрации
+    #         print(f"Найдено {len(filtered_rows)} записей после фильтрации.")  # Отладка: сколько записей после фильтрации
 
-            headers = [
-                "id", "old_id", "date", "type_of_action", "who_add_to_db",
-                "tech_move", "where_moved", "from_moved", "ticket", "description"
-            ]
+    #         headers = [
+    #             "id", "old_id", "date", "type_of_action", "who_add_to_db",
+    #             "tech_move", "where_moved", "from_moved", "ticket", "description"
+    #         ]
 
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Последние события"
-            ws.append(headers)
-            for row in filtered_rows:
-                ws.append(row)
+    #         wb = Workbook()
+    #         ws = wb.active
+    #         ws.title = "Последние события"
+    #         ws.append(headers)
+    #         for row in filtered_rows:
+    #             ws.append(row)
 
-            # Установка ширины колонок в зависимости от содержимого
-            for col_idx, col in enumerate(ws.iter_cols(min_row=1, max_row=ws.max_row, max_col=ws.max_column), 1):
-                max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
-                ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
+    #         # Установка ширины колонок в зависимости от содержимого
+    #         for col_idx, col in enumerate(ws.iter_cols(min_row=1, max_row=ws.max_row, max_col=ws.max_column), 1):
+    #             max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+    #             ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
 
-            wb.save(filename)
-            QMessageBox.information(self, "Экспорт завершён", f"Файл успешно создан:\n{str(filename)}\nКоличество записей: {len(filtered_rows)}")
+    #         wb.save(filename)
+    #         QMessageBox.information(self, "Экспорт завершён", f"Файл успешно создан:\n{str(filename)}\nКоличество записей: {len(filtered_rows)}")
 
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
+    #     except Exception as e:
+    #         QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
 
 
 

@@ -166,40 +166,42 @@ class App(QMainWindow):
         super().__init__()
         self.current_user = None
         self.setWindowTitle("CSC_CMDB")
-        self.setGeometry(100, 100, 100, 100)
-        self.authUI()
+        screen_size = self.screen().size()
+        self.setFixedSize(screen_size)
+        self.fullUI()
+        # self.authUI()
         self.records_per_page = 50  # или любое другое число
         self.current_page = 0
         self.total_records = 0
         self.current_query = ""
     
-    def authenticate(self):
-        user = self.input_user.text()
-        password = self.input_pass.text()
+    # def authenticate(self):
+    #     user = self.input_user.text()
+    #     password = self.input_pass.text()
         
-        if self.check_user_credentials(user, password):
-            self.current_user = user  # сохраняем имя пользователя
-            self.label_user.setText("Доступ разрешен")
-            self.setGeometry(100, 100, 600, 400)
-            self.fullUI()
-        else:
-            self.label_user.setText("Ошибка авторизации")
+    #     if self.check_user_credentials(user, password):
+    #         self.current_user = user  # сохраняем имя пользователя
+    #         self.label_user.setText("Доступ разрешен")
+    #         self.setGeometry(100, 100, 600, 400)
+    #         self.fullUI()
+    #     else:
+    #         self.label_user.setText("Ошибка авторизации")
     
 
-    def check_user_credentials(self, username, password):
-        try:
-            conn = get_db_connection()  # Подключение к базе SQLite
-            cursor = conn.cursor()
-            query = "SELECT * FROM users WHERE username = ? AND password = ?"
-            cursor.execute(query, (username, password))
-            result = cursor.fetchone()
-            cursor.close()
-            conn.close()
+    # def check_user_credentials(self, username, password):
+    #     try:
+    #         conn = get_db_connection()  # Подключение к базе SQLite
+    #         cursor = conn.cursor()
+    #         query = "SELECT * FROM users WHERE username = ? AND password = ?"
+    #         cursor.execute(query, (username, password))
+    #         result = cursor.fetchone()
+    #         cursor.close()
+    #         conn.close()
             
-            return bool(result)  # True, если пользователь найден
-        except sqlite3.Error as e:
-            print(f"Ошибка подключения к базе данных: {e}")
-            return False
+    #         return bool(result)  # True, если пользователь найден
+    #     except sqlite3.Error as e:
+    #         print(f"Ошибка подключения к базе данных: {e}")
+    #         return False
         
 
     def fullUI(self):
@@ -414,14 +416,13 @@ class App(QMainWindow):
             print(f"Ошибка при загрузке техники: {e}")
 
     def technic_action_func(self):
-
         main_layout = QHBoxLayout()
 
-        # === Левая панель (форма с информацией о технике) ===
-        left_form_layout = QFormLayout()
+        # === Левая панель ===
         left_widget = QWidget()
-        left_widget.setFixedWidth(500)
-        left_form_layout.setVerticalSpacing(15)
+        left_form_layout = QFormLayout()
+        # left_form_layout.setContentsMargins(10, 10, 10, 10)
+
         self.where_field = QLineEdit()
         self.serial_field = QLineEdit()
         self.type_field = QLineEdit()
@@ -436,7 +437,7 @@ class App(QMainWindow):
         self.delivery_field = QLineEdit()
         self.price_field = QLineEdit()
         self.owner_field = QLineEdit()
-        self.comment_field = QLineEdit()
+        self.location_field = QLineEdit()
 
         left_form_layout.addRow("Где находится:", self.where_field)
         left_form_layout.addRow("Серийный:", self.serial_field)
@@ -448,46 +449,63 @@ class App(QMainWindow):
         left_form_layout.addRow("Статус:", self.status_field)
         left_form_layout.addRow("Инвентарный №:", self.inventory_field)
         left_form_layout.addRow("Год выпуска:", self.year_field)
+        left_form_layout.addRow("Партномер:", QLineEdit())  # необязательное поле
         left_form_layout.addRow("Поставщик:", self.provider_field)
         left_form_layout.addRow("Дата поставки:", self.delivery_field)
         left_form_layout.addRow("Стоимость:", self.price_field)
         left_form_layout.addRow("Собственник:", self.owner_field)
-        left_form_layout.addRow("Комментарий:", self.comment_field)
+        left_form_layout.addRow("Локация:", self.location_field)
 
-        save_button = QPushButton("Сохранить изменения")
-        left_form_layout.addRow(save_button)
-
-        left_form_layout.setContentsMargins(0, 50, 0, 0)
-                # Устанавливаем выравнивание для всех меток по левому краю
-        left_form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        # Комментарий (QTextEdit) и кнопка "Сохранить"
+        comment_layout = QHBoxLayout()
+        self.comment_field = QTextEdit()
+        self.comment_field.setFixedHeight(50)
+        self.save_button = QPushButton("Сохранить изменения")
+        self.save_button.setFixedWidth(150)
+        comment_layout.addWidget(self.comment_field)
+        comment_layout.addWidget(self.save_button)
+        left_form_layout.addRow("Комментарий:", comment_layout)
 
         left_widget.setLayout(left_form_layout)
+        left_widget.setFixedWidth(500)
 
         # === Правая панель ===
+        right_widget = QWidget()
         right_layout = QVBoxLayout()
-        self.devices_list = QListWidget()
-        self.devices_list.setMaximumHeight(200)  # Ограничение по высоте
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(5)
 
+        # Поле поиска
+        self.search_field = QLineEdit()
+        self.search_field.setPlaceholderText("Поиск устройства...")
+        self.search_field.setFixedHeight(30)
+
+        # Список устройств
+        self.devices_list = QListWidget()
+        self.devices_list.setMaximumHeight(200)
+
+        # Таблица истории
         self.history_table = QTableWidget()
         self.history_table.setColumnCount(6)
-        self.history_table.setHorizontalHeaderLabels(["Дата", "Тип", "Кем", "Куда", "Основание", "Примечание"])
+        self.history_table.setHorizontalHeaderLabels(["Дата", "Тип", "Сотр. ИТ", "Куда", "Откуда", "Основание"])
         self.history_table.horizontalHeader().setStretchLastSection(True)
-        self.history_table.setMaximumHeight(200)  # Ограничение по высоте
+        self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
-
-        right_layout.setContentsMargins(0, 0, 0, 350)
-
+        right_layout.addWidget(self.search_field)
         right_layout.addWidget(self.devices_list)
+        right_layout.addWidget(QLabel("История изменения"))
         right_layout.addWidget(self.history_table)
 
+        right_widget.setLayout(right_layout)
+
+        # Финальный макет
         main_layout.addWidget(left_widget)
-        main_layout.addLayout(right_layout)
+        main_layout.addWidget(right_widget)
 
         central_widget = QWidget()
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
-        
 
     def store_action_func(self):
         main_widget = QWidget()
@@ -1293,6 +1311,6 @@ if __name__ == "__main__":
     
     app = QApplication(sys.argv)
     window = App()
-    window.show()
+    window.showMaximized()
 
     sys.exit(app.exec())

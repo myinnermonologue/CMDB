@@ -231,6 +231,7 @@ class App(QMainWindow):
         ckr_users_action.triggered.connect(lambda: self.show_db_func(arr_ckr_users, query_ckr_users))
         store_action.triggered.connect(self.store_action_func)
         tech_action.triggered.connect(self.technic_action_func)
+        employee_action.triggered.connect(self.employee_action_func)
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
@@ -737,7 +738,88 @@ class App(QMainWindow):
         self.store_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # !!! Должно быть StrongFocus, иначе текст не выделяется
 
 
-        
+    def employee_action_func(self):
+        main_widget = QWidget()
+        main_layout = QGridLayout(main_widget)
+
+        # === Левая часть ===
+        form_layout = QGridLayout()
+
+        self.combo_fio_employee = QComboBox()
+        self.combo_fio_employee.setEditable(True)
+        form_layout.addWidget(self.combo_fio_employee, 0, 0, 1, 2)
+
+        fields = [
+            "Фамилия", "Имя", "Отчество", "Табельный", "Компания",
+            "Отдел 1", "Отдел 2", "Отдел 3", "Отдел 4", "Отдел 5",
+            "Должность", "Город", "Статус", "Руководитель", "Email"
+        ]
+        self.employee_fields = {}
+
+        for i, label_text in enumerate(fields):
+            label = QLabel(label_text)
+            line_edit = QLineEdit()
+            self.employee_fields[label_text] = line_edit
+            form_layout.addWidget(label, i + 1, 0)
+            form_layout.addWidget(line_edit, i + 1, 1)
+
+        # Комментарий
+        form_layout.addWidget(QLabel("Комментарий"), len(fields) + 1, 0)
+        self.employee_comment = QTextEdit()
+        self.employee_comment.setFixedHeight(50)
+        form_layout.addWidget(self.employee_comment, len(fields) + 1, 1)
+
+        # Кнопка сохранить
+        self.btn_save_employee = QPushButton("Сохранить изменения")
+        form_layout.addWidget(self.btn_save_employee, len(fields) + 2, 1)
+        self.btn_save_employee.clicked.connect(self.save_employee_data)
+        main_layout.addLayout(form_layout, 0, 0)
+
+        # === Правая часть ===
+        right_layout = QVBoxLayout()
+
+        # Активы
+        right_layout.addWidget(QLabel("Выданные активы"))
+        self.issued_assets_text = QTextEdit()
+        self.issued_assets_text.setReadOnly(True)
+        right_layout.addWidget(self.issued_assets_text)
+
+        # Кнопка экспорта
+        self.btn_export_employee = QPushButton("Экспорт в excel")
+        right_layout.addWidget(self.btn_export_employee)
+        # История
+        right_layout.addWidget(QLabel("История изменения"))
+        self.employee_history_table = QTableWidget()
+        self.employee_history_table.setColumnCount(5)
+        self.employee_history_table.setHorizontalHeaderLabels(["Дата", "Тип", "Техника", "Основание", "Примечание"])
+        self.employee_history_table.horizontalHeader().setStretchLastSection(True)
+        right_layout.addWidget(self.employee_history_table)
+
+        main_layout.addLayout(right_layout, 0, 1)
+
+        self.setCentralWidget(main_widget)
+        self.combo_fio_employee.currentIndexChanged.connect(self.load_employee_data)
+            # === Подгрузка сотрудников ===
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
+            users = [row[0] for row in cursor.fetchall() if row[0]]
+
+            self.combo_fio_employee.addItem("")  # Пустой пункт
+            self.combo_fio_employee.addItems(users)
+
+            completer = QCompleter(users)
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
+            self.combo_fio_employee.setCompleter(completer)
+
+            cursor.close()
+            conn.close()
+
+        except Exception as e:
+            print(f"Ошибка при загрузке сотрудников: {e}")
 
     def update_store_table(self):
         selected_full_name = self.fio_input.currentText()
@@ -815,7 +897,157 @@ class App(QMainWindow):
             print(f"Ошибка при загрузке техники для склада: {e}")
 
 
-    def move_action_func(self):
+    def save_employee_data(self):
+        full_name = self.combo_fio_employee.currentText().strip()
+        if not full_name:
+            QMessageBox.warning(self, "Ошибка", "Выберите сотрудника для сохранения.")
+            return
+
+        try:
+            # Получаем значения из интерфейса
+            last_name = self.employee_fields["Фамилия"].text().strip()
+            first_name = self.employee_fields["Имя"].text().strip()
+            patronymic = self.employee_fields["Отчество"].text().strip()
+            tabel_num = self.employee_fields["Табельный"].text().strip()
+
+            # Формируем новое значение full_name_tabel
+            new_full_name = f"{last_name} {first_name} {patronymic} ({tabel_num})".strip()
+
+            values = {
+                "last_name": last_name,
+                "first_name": first_name,
+                "patronymic": patronymic,
+                "tabel_num": tabel_num,
+                "company": self.employee_fields["Компания"].text().strip(),
+                "unit1": self.employee_fields["Отдел 1"].text().strip(),
+                "unit2": self.employee_fields["Отдел 2"].text().strip(),
+                "unit3": self.employee_fields["Отдел 3"].text().strip(),
+                "unit4": self.employee_fields["Отдел 4"].text().strip(),
+                "unit5": self.employee_fields["Отдел 5"].text().strip(),
+                "position": self.employee_fields["Должность"].text().strip(),
+                "city": self.employee_fields["Город"].text().strip(),
+                "status": self.employee_fields["Статус"].text().strip(),
+                "supervisor": self.employee_fields["Руководитель"].text().strip(),
+                "email": self.employee_fields["Email"].text().strip(),
+                "description": self.employee_comment.toPlainText().strip(),
+                "full_name_tabel": new_full_name
+            }
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            set_clause = ", ".join([f"{col} = ?" for col in values.keys()])
+            query = f"""
+                UPDATE CKR_users
+                SET {set_clause}
+                WHERE full_name_tabel = ?
+            """
+
+            cursor.execute(query, list(values.values()) + [full_name])
+            conn.commit()
+
+            cursor.close()
+            conn.close()
+
+            # Обновить выпадающий список, если имя изменилось
+            # Полное обновление выпадающего списка (гарантированное)
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
+                users = [row[0] for row in cursor.fetchall() if row[0]]
+                cursor.close()
+                conn.close()
+
+                self.combo_fio_employee.blockSignals(True)  # временно отключаем сигнал
+                self.combo_fio_employee.clear()
+                self.combo_fio_employee.addItem("")
+                self.combo_fio_employee.addItems(users)
+                self.combo_fio_employee.setCurrentText(new_full_name)
+                self.combo_fio_employee.blockSignals(False)
+
+                # Обновляем completer
+                completer = QCompleter(users)
+                completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+                completer.setFilterMode(Qt.MatchFlag.MatchContains)
+                self.combo_fio_employee.setCompleter(completer)
+
+            except Exception as e:
+                print(f"Ошибка при обновлении выпадающего списка: {e}")
+
+
+            QMessageBox.information(self, "Успешно", "Данные сотрудника и ФИО успешно обновлены.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить данные: {e}")
+
+
+    def load_employee_data(self):
+        full_name = self.combo_fio_employee.currentText().strip()
+        if not full_name:
+            for field in self.employee_fields.values():
+                field.clear()
+            self.employee_comment.clear()
+            return
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT last_name, first_name, patronymic, tabel_num, company,
+                    unit1, unit2, unit3, unit4, unit5,
+                    position, city, status, supervisor, email, description
+                FROM CKR_users
+                WHERE full_name_tabel = ?
+                LIMIT 1
+            """, (full_name,))
+            row = cursor.fetchone()
+
+            if row:
+                keys = list(self.employee_fields.keys())
+                for i, key in enumerate(keys):
+                    if i < len(row):
+                        self.employee_fields[key].setText(str(row[i]) if row[i] else "")
+
+                # Комментарий
+                self.employee_comment.setPlainText(str(row[-1]) if row[-1] else "")
+            else:
+                for field in self.employee_fields.values():
+                    field.clear()
+                self.employee_comment.clear()
+                    # === Загрузка выданных активов ===
+            self.issued_assets_text.clear()
+
+            # Получаем old_id до закрытия курсора
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (full_name,))
+            user_id_row = cursor.fetchone()
+
+            if user_id_row:
+                user_id = user_id_row[0]
+
+                cursor.execute("""
+                    SELECT full_device_data 
+                    FROM Table_Devices 
+                    WHERE assigned_to = ? AND full_device_data IS NOT NULL
+                    ORDER BY full_device_data
+                """, (user_id,))
+                assets = [row[0] for row in cursor.fetchall() if row[0]]
+
+                if assets:
+                    self.issued_assets_text.setPlainText("\n".join(assets))
+                else:
+                    self.issued_assets_text.setPlainText("Нет выданных активов.")
+            else:
+                self.issued_assets_text.setPlainText("Сотрудник не найден.")
+
+            cursor.close()
+            conn.close()
+
+        except Exception as e:
+            print(f"Ошибка при загрузке данных сотрудника: {e}")
+        
+    def move_action_func(self): 
 
         main_widget = QWidget()
         main_layout = QVBoxLayout(main_widget)

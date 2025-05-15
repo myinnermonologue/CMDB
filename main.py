@@ -1,13 +1,13 @@
 import sys
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QLabel, QLineEdit, QComboBox, QCheckBox,QFormLayout,
-    QVBoxLayout, QWidget, QPushButton, QCompleter, QListWidget, QAbstractItemView,
+    QApplication, QMainWindow, QLabel, QLineEdit, QComboBox, QCheckBox,QFormLayout,QFileDialog,
+    QVBoxLayout, QWidget, QPushButton, QCompleter, QListWidget, QAbstractItemView,QDateTimeEdit,
     QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit,QMessageBox,QHBoxLayout
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import (Qt, QDateTime)
 from PyQt6.QtGui import QAction
 from pysqlcipher3 import dbapi2 as sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from dotenv import load_dotenv
 import os
 from openpyxl import Workbook
@@ -215,7 +215,7 @@ class App(QMainWindow):
         store_action = QAction("Склад", self)
         tech_action = QAction("Техника", self)
         employee_action = QAction("Сотрудник", self)
-        add_action = QAction("Добавление", self)
+        add_action = QAction("Создание", self)
         tech_assets_action = QAction("Таблица БД", self)
         tech_types_db_action = QAction("Категории техники", self)
         history_action = QAction("История", self) 
@@ -232,6 +232,7 @@ class App(QMainWindow):
         store_action.triggered.connect(self.store_action_func)
         tech_action.triggered.connect(self.technic_action_func)
         employee_action.triggered.connect(self.employee_action_func)
+        add_action.triggered.connect(self.add_action_func)
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
@@ -787,6 +788,7 @@ class App(QMainWindow):
         # Кнопка экспорта
         self.btn_export_employee = QPushButton("Экспорт в excel")
         right_layout.addWidget(self.btn_export_employee)
+        self.btn_export_employee.clicked.connect(self.export_issued_assets_to_excel)
         # История
         right_layout.addWidget(QLabel("История изменения"))
         self.employee_history_table = QTableWidget()
@@ -981,6 +983,54 @@ class App(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить данные: {e}")
 
+    def export_issued_assets_to_excel(self):
+        text = self.issued_assets_text.toPlainText().strip()
+        fio = self.combo_fio_employee.currentText().strip()
+
+        if not text:
+            QMessageBox.warning(self, "Ошибка", "Нет данных для экспорта.")
+            return
+
+        if not fio:
+            QMessageBox.warning(self, "Ошибка", "ФИО сотрудника не выбрано.")
+            return
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить как",
+            "",
+            "Excel файлы (*.xlsx)"
+        )
+
+        if not filepath:
+            return  # пользователь отменил
+
+        if not filepath.endswith(".xlsx"):
+            filepath += ".xlsx"
+
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Выданные активы"
+
+            # Первая строка: ФИО сотрудника
+            ws.append([fio])
+            ws.append([])  # Пустая строка
+
+            # Сами активы
+            for line in text.splitlines():
+                ws.append([line])
+
+            # Автоширина колонки
+            max_len = max((len(str(cell.value)) for cell in ws["A"] if cell.value), default=10)
+            ws.column_dimensions['A'].width = max_len + 2
+
+            wb.save(filepath)
+
+            QMessageBox.information(self, "Экспорт завершён", f"Файл успешно сохранён:\n{filepath}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить файл:\n{str(e)}")
 
     def load_employee_data(self):
         full_name = self.combo_fio_employee.currentText().strip()
@@ -1040,28 +1090,240 @@ class App(QMainWindow):
                     self.issued_assets_text.setPlainText("Нет выданных активов.")
             else:
                 self.issued_assets_text.setPlainText("Сотрудник не найден.")
+                        # === Загрузка истории ===
+            self.employee_history_table.setRowCount(0)
+
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (full_name,))
+            user_id_row = cursor.fetchone()
+
+            if user_id_row:
+                user_id = user_id_row[0]
+
+                # Получаем историю, где where_moved = old_id
+                cursor.execute("""
+                    SELECT date, type_of_action, tech_move, ticket, description
+                    FROM History
+                    WHERE where_moved = ?
+                    ORDER BY date DESC
+                """, (user_id,))
+                history_rows = cursor.fetchall()
+
+                # Словарь: old_id -> full_device_data
+                cursor.execute("SELECT old_id, full_device_data FROM Table_Devices")
+                device_map = {str(row[0]): row[1] for row in cursor.fetchall() if row[1]}
+
+                self.employee_history_table.setRowCount(len(history_rows))
+
+                for row_idx, (date, action, tech_id, ticket, desc) in enumerate(history_rows):
+                    tech_name = device_map.get(str(tech_id), "")
+                    self.employee_history_table.setItem(row_idx, 0, QTableWidgetItem(str(date)))
+                    self.employee_history_table.setItem(row_idx, 1, QTableWidgetItem(str(action)))
+                    self.employee_history_table.setItem(row_idx, 2, QTableWidgetItem(str(tech_name)))
+                    self.employee_history_table.setItem(row_idx, 3, QTableWidgetItem(str(ticket)))
+                    self.employee_history_table.setItem(row_idx, 4, QTableWidgetItem(str(desc)))
+
 
             cursor.close()
             conn.close()
 
         except Exception as e:
             print(f"Ошибка при загрузке данных сотрудника: {e}")
-        
-    def move_action_func(self): 
 
+
+    def add_action_func(self):
+        main_widget = QWidget()
+        layout = QFormLayout(main_widget)
+
+        # === Поля ===
+        self.fio_input = QComboBox()
+        self.fio_input.setEditable(True)
+        self.fio_input.addItem("")
+        self.serial_input = QLineEdit()
+        self.type_input = QLineEdit()
+        self.subtype_input = QLineEdit()
+        self.brand_input = QLineEdit()
+        self.model_input = QLineEdit()
+        self.condition_input = QComboBox()
+        self.status_input = QComboBox()
+        self.inv_input = QLineEdit()
+        self.year_input = QLineEdit()
+        self.ship_input = QLineEdit()
+        self.supplier_input = QLineEdit()
+        self.date_input = QDateTimeEdit()
+        self.price_input = QLineEdit()
+        self.owner_input = QLineEdit()
+        self.comment_input = QTextEdit()
+
+        self.condition_input.addItems(["исправно", "не исправно"])
+        self.status_input.addItems(["эксплуатация", "хранение", "поиск", "списано", "ремонт", "утилизировано"])
+        self.date_input.setCalendarPopup(True)
+        self.date_input.setDisplayFormat("dd.MM.yyyy H:mm:ss")
+        self.date_input.setDateTime(QDateTime.currentDateTime())
+
+        from datetime import datetime
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
+            users = [row[0] for row in cursor.fetchall() if row[0]]
+            self.fio_input.addItems(users)
+            completer = QCompleter(users)
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
+            self.fio_input.setCompleter(completer)
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"Ошибка при загрузке ФИО: {e}")
+
+        layout.addRow("Где находится", self.fio_input)
+        layout.addRow("Серийный", self.serial_input)
+        layout.addRow("Тип", self.type_input)
+        layout.addRow("Подтип", self.subtype_input)
+        layout.addRow("Производитель", self.brand_input)
+        layout.addRow("Модель", self.model_input)
+        layout.addRow("Состояние", self.condition_input)
+        layout.addRow("Статус", self.status_input)
+        layout.addRow("Инвентарный", self.inv_input)
+        layout.addRow("Год выпуска", self.year_input)
+        layout.addRow("Партномер", self.ship_input)
+        layout.addRow("Поставщик", self.supplier_input)
+        layout.addRow("Дата поставки", self.date_input)
+        layout.addRow("Стоимость", self.price_input)
+        layout.addRow("Собственник", self.owner_input)
+        layout.addRow("Комментарий", self.comment_input)
+
+        btn_add = QPushButton("Добавить технику")
+        btn_add.clicked.connect(self.insert_new_device)
+        layout.addRow(btn_add)
+
+        self.setCentralWidget(main_widget)
+
+    def insert_new_device(self):
+        fields = [
+            self.fio_input.currentText().strip(),
+            self.serial_input.text().strip(),
+            self.type_input.text().strip(),
+            self.subtype_input.text().strip(),
+            self.brand_input.text().strip(),
+            self.model_input.text().strip(),
+            self.inv_input.text().strip(),
+            self.year_input.text().strip(),
+            self.ship_input.text().strip(),
+            self.supplier_input.text().strip(),
+            self.price_input.text().strip(),
+            self.owner_input.text().strip()
+        ]
+
+        if any(not val for val in fields):
+            QMessageBox.warning(self, "Ошибка", "Заполните все обязательные поля!")
+            return
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT MAX(CAST(old_id AS INTEGER)) FROM Table_Devices")
+            max_device_id = cursor.fetchone()[0] or 0
+            new_device_id = max_device_id + 1
+
+            cursor.execute("SELECT MAX(CAST(id AS INTEGER)) FROM Table_Devices")
+            max_id = cursor.fetchone()[0] or 0
+            new_id = max_id + 1
+
+            cursor.execute("SELECT MAX(CAST(old_id AS INTEGER)) FROM tech_types")
+            max_type_id = cursor.fetchone()[0] or 0
+            new_type_id = max_type_id + 1
+
+            # Получаем assigned_to
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (self.fio_input.currentText(),))
+            assigned_to = cursor.fetchone()[0]
+
+            condition = self.condition_input.currentText()
+            status = self.status_input.currentText()
+            date_supply = self.date_input.dateTime().toString("dd.MM.yyyy H:mm:ss")
+
+            type_ = self.type_input.text().strip()
+            subtype = self.subtype_input.text().strip()
+            brand = self.brand_input.text().strip()
+            model = self.model_input.text().strip()
+            serial = self.serial_input.text().strip()
+
+            full_name = f"{type_}"
+            if subtype.lower() != "не применимо":
+                full_name += f" {subtype}"
+            full_name += f" {brand}"
+            if model.lower() != "не применимо":
+                full_name += f" {model}"
+            full_name += f" ({serial})"
+
+            cursor.execute("""
+                INSERT INTO Table_Devices (
+                    id, old_id, assigned_to, serial_number, condition, status,
+                    inv_number, year_of_release, ship_number, supplier, date_of_supply,
+                    price, owner_of_device, description, full_device_data, device_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                new_id, new_device_id, assigned_to, serial, condition, status,
+                self.inv_input.text().strip(), self.year_input.text().strip(),
+                self.ship_input.text().strip(), self.supplier_input.text().strip(),
+                date_supply, self.price_input.text().strip(), self.owner_input.text().strip(),
+                self.comment_input.toPlainText().strip(), full_name, new_type_id
+            ))
+
+            cursor.execute("""
+                INSERT INTO tech_types (old_id, type_tech, additional_type, brand, model)
+                VALUES (?, ?, ?, ?, ?)
+            """, (new_type_id, type_, subtype, brand, model))
+
+                    # === Добавляем запись в History ===
+            cursor.execute("SELECT MAX(CAST(id AS INTEGER)) FROM History")
+            max_hist_id = cursor.fetchone()[0] or 0
+            new_hist_id = max_hist_id + 1
+
+            cursor.execute("SELECT MAX(CAST(old_id AS INTEGER)) FROM History")
+            max_hist_old_id = cursor.fetchone()[0] or 0
+            new_hist_old_id = max_hist_old_id + 1
+
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            comment = self.comment_input.toPlainText().strip()
+
+            cursor.execute("""
+                INSERT INTO History (
+                    id, old_id, date, type_of_action, who_add_to_db,
+                    tech_move, where_moved, from_moved, ticket, description
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                new_hist_id, new_hist_old_id, now_str, "создание нового", "test",
+                new_device_id, assigned_to, None, None, comment
+            ))
+
+            conn.commit()
+            QMessageBox.information(self, "Успех", "Техника успешно добавлена.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при добавлении: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+
+
+
+    def move_action_func(self): 
         main_widget = QWidget()
         main_layout = QVBoxLayout(main_widget)
 
         # Основная сетка
         grid = QGridLayout()
 
-       # Выпадающий список "Объект"
+        # === Отправитель ===
         grid.addWidget(QLabel("Объект"), 0, 0)
         self.fio_input = QComboBox()
-        self.fio_input.setEditable(True)  # Разрешаем ввод текста
+        self.fio_input.setEditable(True)
         self.fio_input.addItem("")
         grid.addWidget(self.fio_input, 1, 0)
-        # Загружаем данные
+
         user_list_input = []
         try:
             conn = get_db_connection()
@@ -1077,18 +1339,18 @@ class App(QMainWindow):
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке ФИО: {e}")
 
-        # Настраиваем автодополнение
         completer = QCompleter(user_list_input, self.fio_input)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.fio_input.setCompleter(completer)
 
+        # === Получатель ===
         grid.addWidget(QLabel("Объект"), 0, 2)
         self.fio_output = QComboBox()
         self.fio_output.setEditable(True)
         self.fio_output.addItem("")
         grid.addWidget(self.fio_output, 1, 2)
-        # Загружаем данные
+
         user_list_output = []
         try:
             conn = get_db_connection()
@@ -1103,7 +1365,7 @@ class App(QMainWindow):
             conn.close()
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке ФИО: {e}")
-        # Настраиваем автодополнение
+
         completer_output = QCompleter(user_list_output, self.fio_output)
         completer_output.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer_output.setFilterMode(Qt.MatchFlag.MatchContains)
@@ -1111,33 +1373,40 @@ class App(QMainWindow):
 
         self.fio_input.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
         self.fio_output.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
-    
 
+        # === № обращения ===
         grid.addWidget(QLabel("№ обращения"), 2, 0)
         self.request_input = QLineEdit()
         grid.addWidget(self.request_input, 3, 0)
 
-        grid.addWidget(QLabel("Комментарий к обращению"), 4, 0)
+        # === Тип движения ===
+        grid.addWidget(QLabel("Тип движения"), 4, 0)
+        self.combo_move_type = QComboBox()
+        self.combo_move_type.addItems(["выдача", "перемещение", "на склад", "создание нового", "в поиск", "изменение"])
+        grid.addWidget(self.combo_move_type, 5, 0)
+
+        # === Комментарий ===
+        grid.addWidget(QLabel("Комментарий к обращению"), 6, 0)
         self.comment_input = QTextEdit()
-        grid.addWidget(self.comment_input, 5, 0)
         self.comment_input.setFixedHeight(60)
-        # Списки
+        grid.addWidget(self.comment_input, 7, 0)
+
+        # === Списки устройств ===
         self.list_left = QListWidget()
         self.list_right = QListWidget()
         self.list_left.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.list_right.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
-        grid.addWidget(self.list_left, 6, 0)
-        grid.addWidget(self.list_right, 6, 2)
+        grid.addWidget(self.list_left, 8, 0)
+        grid.addWidget(self.list_right, 8, 2)
 
-
-        # Кнопки перемещения
+        # === Кнопка перемещения ===
         move_layout = QVBoxLayout()
         self.move_right_btn = QPushButton("Переместить---->>>")
-        move_layout.addWidget(self.move_right_btn)
-        grid.addLayout(move_layout, 6, 1)
         self.move_right_btn.setFixedHeight(60)
+        move_layout.addWidget(self.move_right_btn)
+        grid.addLayout(move_layout, 8, 1)
 
-        # Чекбоксы
+        # === Чекбоксы ===
         checkbox_grid_left = QGridLayout()
         checkbox_grid_right = QGridLayout()
         options = [
@@ -1149,37 +1418,39 @@ class App(QMainWindow):
         self.checkboxes_left = [QCheckBox(opt) for opt in options]
         self.checkboxes_right = [QCheckBox(opt) for opt in options]
 
-        # Заполняем левую часть чекбоксов
+        # Левая сторона чекбоксов
         row, col = 0, 0
-        for i, cb in enumerate(self.checkboxes_left):
+        for cb in self.checkboxes_left:
             checkbox_grid_left.addWidget(cb, row, col)
             col += 1
-            if col >= 2:  # Переход на следующую строку каждые 2 чекбокса
+            if col >= 2:
                 col = 0
                 row += 1
 
-        # Заполняем правую часть чекбоксов
+        # Правая сторона чекбоксов
         row, col = 0, 0
-        for i, cb in enumerate(self.checkboxes_right):
+        for cb in self.checkboxes_right:
             checkbox_grid_right.addWidget(cb, row, col)
             col += 1
-            if col >= 2:  # Переход на следующую строку каждые 2 чекбокса
+            if col >= 2:
                 col = 0
                 row += 1
 
-        # Вставляем сетки чекбоксов в основную сетку
-        grid.addLayout(checkbox_grid_left, 7, 0)
-        grid.addLayout(checkbox_grid_right, 7, 2)
+        # Добавляем чекбоксы в сетку
+        grid.addLayout(checkbox_grid_left, 9, 0)
+        grid.addLayout(checkbox_grid_right, 9, 2)
 
-
-        # Добавляем сетку в основной макет
+        # Финальная сборка
         main_layout.addLayout(grid)
         self.setCentralWidget(main_widget)
+
         for cb in self.checkboxes_left:
             cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_input, self.list_left))
         for cb in self.checkboxes_right:
             cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_output, self.list_right))
+
         self.move_right_btn.clicked.connect(self.move_device_between_users)
+
 
     def export_all_events_to_excel(self):
         try:
@@ -1499,9 +1770,10 @@ class App(QMainWindow):
             to_id = to_user_id[0]
 
             now = datetime.now()
-            now_str = f"{now.day}.{now.month}.{now.year} {now.hour}:{now.minute}:{now.second}"
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
             user_name = self.current_user
             ticket = self.request_input.text()
+            action_type = self.combo_move_type.currentText()
             comment = self.comment_input.toPlainText()
 
             for selected_item in selected_items:
@@ -1539,7 +1811,7 @@ class App(QMainWindow):
                         old_id, date, type_of_action, who_add_to_db,
                         tech_move, where_moved, from_moved, ticket, description
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (next_old_id, now_str, comment, user_name, device_id, to_id, from_id, ticket, comment))
+                """, (next_old_id, now_str, action_type, user_name, device_id, to_id, from_id, ticket, comment))
 
                 # Обновляем интерфейс
                 self.list_right.addItem(selected_text)

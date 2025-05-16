@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget, QPushButton, QCompleter, QListWidget, QAbstractItemView,QDateTimeEdit,
     QGridLayout, QDialog, QTableWidget, QTableWidgetItem, QToolBar, QTextEdit,QMessageBox,QHBoxLayout
 )
-from PyQt6.QtCore import (Qt, QDateTime)
+from PyQt6.QtCore import (Qt, QDateTime, QTimer)
 from PyQt6.QtGui import QAction
 from pysqlcipher3 import dbapi2 as sqlite3
 from datetime import datetime
@@ -168,13 +168,49 @@ class App(QMainWindow):
         self.setWindowTitle("CSC_CMDB")
         screen_size = self.screen().size()
         self.resize(screen_size.width(), screen_size.height())
+                # Получение домена и пользователя
+        domain = os.environ.get("USERDOMAIN")
+        username = os.environ.get("USERNAME")
+        self.current_user_full_name = ""
+        self.current_user_role = ""
+        # Проверка домена
+        if domain.upper() != "PC_NEAKTUALNO":
+            QMessageBox.critical(None, "Ошибка доступа", f"Недопустимый домен: {domain}")
+            sys.exit()
+
+        # Проверка пользователя в БД
+        if not self.is_user_in_db(username):
+            QMessageBox.critical(None, "Ошибка доступа", f"Пользователь {username} не найден в системе.")
+            sys.exit()
+            
+        QTimer.singleShot(100, lambda: QMessageBox.information(
+            self,
+            "Добро пожаловать",
+            f"Добро пожаловать, {self.current_user_full_name}!\nВаша роль: {self.current_user_role}"
+        ))
         self.fullUI()
         # self.authUI()
         self.records_per_page = 50  # или любое другое число
         self.current_page = 0
         self.total_records = 0
         self.current_query = ""
-    
+
+    def is_user_in_db(self, username):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT full_name, role FROM it_users WHERE LOWER(username) = LOWER(?)", (username,))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                full_name, role = result
+                self.current_user_full_name = full_name
+                self.current_user_role = role
+                return True
+            return False
+        except Exception as e:
+            print(f"Ошибка при проверке пользователя: {e}")
+            return False
     # def authenticate(self):
     #     user = self.input_user.text()
     #     password = self.input_pass.text()
@@ -233,6 +269,8 @@ class App(QMainWindow):
         tech_action.triggered.connect(self.technic_action_func)
         employee_action.triggered.connect(self.employee_action_func)
         add_action.triggered.connect(self.add_action_func)
+
+
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
@@ -244,12 +282,24 @@ class App(QMainWindow):
         toolbar.addAction(history_user_action)
         toolbar.addAction(it_users_action)
         toolbar.addAction(ckr_users_action)
+                # Список ограниченных кнопок
+        restricted_actions = [
+            tech_types_db_action,
+            tech_assets_action,
+            history_action,
+            history_user_action,
+            it_users_action,
+            ckr_users_action
+        ]
 
+        if self.current_user_role.lower() in ["manager", "auditor"]:
+            for action in restricted_actions:
+                toolbar.removeAction(action)
         # Контейнер для размещения всего интерфейса
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
-    
+
 
     def go_to_prev_page(self):
         if self.current_page > 0:
@@ -773,7 +823,10 @@ class App(QMainWindow):
         # Кнопка сохранить
         self.btn_save_employee = QPushButton("Сохранить изменения")
         form_layout.addWidget(self.btn_save_employee, len(fields) + 2, 1)
-        self.btn_save_employee.clicked.connect(self.save_employee_data)
+        if self.current_user_role.lower() == "auditor":
+            self.btn_save_employee.clicked.connect(lambda: QMessageBox.warning(self, "Нет доступа", "У вас нет прав на сохранение данных."))
+        else:
+            self.btn_save_employee.clicked.connect(self.save_employee_data)
         main_layout.addLayout(form_layout, 0, 0)
 
         # === Правая часть ===
@@ -1195,7 +1248,10 @@ class App(QMainWindow):
         layout.addRow("Комментарий", self.comment_input)
 
         btn_add = QPushButton("Добавить технику")
-        btn_add.clicked.connect(self.insert_new_device)
+        if self.current_user_role.lower() == "auditor":
+            btn_add.clicked.connect(lambda: QMessageBox.warning(self, "Нет доступа", "У вас нет прав на добавление техники."))
+        else:
+            btn_add.clicked.connect(self.insert_new_device)
         layout.addRow(btn_add)
 
         self.setCentralWidget(main_widget)
@@ -1449,7 +1505,10 @@ class App(QMainWindow):
         for cb in self.checkboxes_right:
             cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_output, self.list_right))
 
-        self.move_right_btn.clicked.connect(self.move_device_between_users)
+        if self.current_user_role.lower() == "auditor":
+            self.move_right_btn.clicked.connect(lambda: QMessageBox.warning(self, "Нет доступа", "У вас нет прав на перемещение техники."))
+        else:
+            self.move_right_btn.clicked.connect(self.move_device_between_users)
 
 
     def export_all_events_to_excel(self):

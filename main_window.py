@@ -25,7 +25,7 @@ class MainWindow(
         super().__init__()
         self.setWindowTitle("CSC_CMDB")
         self.current_user = None
-        self.current_user_role = "admin"  # или получить из логина пользователя
+        self.current_user_role = None  # или получить из логина пользователя
         domain = os.environ.get("USERDOMAIN")
         username = os.environ.get("USERNAME")
         # --- Добавьте эти строки ---

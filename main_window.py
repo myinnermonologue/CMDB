@@ -35,7 +35,7 @@ class MainWindow(
         self.current_query = ""
         self.current_table_name = ""
         # -----------------------   ----
-        if domain.upper() != "CSCENTR":
+        if domain.upper() != "PC_NEAKTUALNO":
             QMessageBox.critical(None, "Ошибка доступа", f"Недопустимый домен: {domain}")
             sys.exit()
 

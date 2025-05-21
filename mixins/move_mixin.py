@@ -80,7 +80,7 @@ class MoveMixin:
         # === Тип движения ===
         grid.addWidget(QLabel("Тип движения"), 4, 0)
         self.combo_move_type = QComboBox()
-        self.combo_move_type.addItems(["выдача", "перемещение", "на склад", "создание нового", "в поиск", "изменение"])
+        self.combo_move_type.addItems(["выдача", "перемещение", "на склад", "в поиск", "изменение"])
         grid.addWidget(self.combo_move_type, 5, 0)
 
         # === Комментарий ===

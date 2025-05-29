@@ -33,6 +33,7 @@ class EmployeeMixin:
             "Отдел 5": "unit5",
             "Должность": "position",
             "Город": "city",
+            "Адрес": "address",  # ← добавлено
             "Статус": "status",
             "Руководитель": "supervisor",
             "Email": "email"
@@ -134,14 +135,17 @@ class EmployeeMixin:
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT last_name, first_name, patronymic, tabel_num, company,
-                        unit1, unit2, unit3, unit4, unit5,
-                        position, city, status, supervisor, email, description, full_name_tabel
-                FROM CKR_users
-                WHERE full_name_tabel = ?
-                LIMIT 1
-            """, (full_name,))
+            SELECT last_name, first_name, patronymic, tabel_num, company,
+                    unit1, unit2, unit3, unit4, unit5,
+                    position, city, address, status, supervisor, email, description, full_name_tabel
+            FROM CKR_users
+            WHERE full_name_tabel = ?
+            LIMIT 1
+        """, (full_name,))
             old_row = cursor.fetchone()
+            if not old_row:
+                QMessageBox.warning(self, "Ошибка", "Сотрудник не найден в базе.")
+                return
             old_keys = list(values.keys()) + ["full_name_tabel"]
             old_values = dict(zip(old_keys, [str(x) if x is not None else "" for x in old_row])) if old_row else {}
 
@@ -195,17 +199,7 @@ class EmployeeMixin:
                 old_val = old_values.get(key, "")
                 new_val = values[key]
                 if str(old_val) != str(new_val):
-                    try:
-                        cursor.execute("""
-                            INSERT INTO history_user (id, old_id, date, type, user, description_of_change, who_changed)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            next_id, next_old_id, now, "изменение поля", str(user_old_id), f"поле {key} было: {str(old_val)}", who_changed
-                        ))
-                        print(f"Добавлено: поле {key} было: {str(old_val)}")
-                        next_id += 1
-                    except Exception as e:
-                        print(f"Ошибка при вставке (было): {e}")
+                    # Удаляем добавление "было"
                     try:
                         cursor.execute("""
                             INSERT INTO history_user (id, old_id, date, type, user, description_of_change, who_changed)
@@ -293,7 +287,7 @@ class EmployeeMixin:
             cursor.execute("""
                 SELECT last_name, first_name, patronymic, tabel_num, company,
                     unit1, unit2, unit3, unit4, unit5,
-                    position, city, status, supervisor, email, description
+                    position, city, address, status, supervisor, email, description
                 FROM CKR_users
                 WHERE full_name_tabel = ?
                 LIMIT 1
@@ -313,30 +307,9 @@ class EmployeeMixin:
                     field.clear()
                 self.employee_comment.clear()
                     # === Загрузка выданных активов ===
-            self.issued_assets_text.clear()
-
             # Получаем old_id до закрытия курсора
-            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (full_name,))
-            user_id_row = cursor.fetchone()
-
-            if user_id_row:
-                user_id = user_id_row[0]
-
-                cursor.execute("""
-                    SELECT full_device_data 
-                    FROM Table_Devices 
-                    WHERE assigned_to = ? AND full_device_data IS NOT NULL
-                    ORDER BY full_device_data
-                """, (user_id,))
-                assets = [row[0] for row in cursor.fetchall() if row[0]]
-
-                if assets:
-                    self.issued_assets_text.setPlainText("\n".join(assets))
-                else:
-                    self.issued_assets_text.setPlainText("Нет выданных активов.")
-            else:
-                self.issued_assets_text.setPlainText("Сотрудник не найден.")
-                        # === Загрузка истории ===
+           # === Загрузка выданных активов и истории ===
+            self.issued_assets_text.clear()
             self.employee_history_table.setRowCount(0)
 
             cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (full_name,))
@@ -345,7 +318,17 @@ class EmployeeMixin:
             if user_id_row:
                 user_id = user_id_row[0]
 
-                # Получаем историю, где where_moved = old_id
+                # --- Выданные активы ---
+                cursor.execute("""
+                    SELECT full_device_data 
+                    FROM Table_Devices 
+                    WHERE assigned_to = ? AND full_device_data IS NOT NULL
+                    ORDER BY full_device_data
+                """, (user_id,))
+                assets = [row[0] for row in cursor.fetchall() if row[0]]
+                self.issued_assets_text.setPlainText("\n".join(assets) if assets else "Нет выданных активов.")
+
+                # --- История из таблицы History ---
                 cursor.execute("""
                     SELECT date, type_of_action, tech_move, ticket, description
                     FROM History
@@ -354,23 +337,27 @@ class EmployeeMixin:
                 """, (user_id,))
                 history_rows = cursor.fetchall()
 
-                # Словарь: old_id -> full_device_data
                 cursor.execute("SELECT old_id, full_device_data FROM Table_Devices")
-                device_map = {str(row[0]): row[1] for row in cursor.fetchall() if row[1]}
+                device_map = {int(row[0]): row[1] for row in cursor.fetchall() if row[1]}
+
+                # Загружаем историю для сотрудника
+                cursor.execute("""
+                    SELECT date, type_of_action, tech_move, ticket, description
+                    FROM History
+                    WHERE where_moved = ?
+                    ORDER BY date DESC
+                """, (user_id,))
+                history_rows = cursor.fetchall()
 
                 self.employee_history_table.setRowCount(len(history_rows))
 
                 for row_idx, (date, action, tech_id, ticket, desc) in enumerate(history_rows):
-                    tech_name = device_map.get(str(tech_id), "")
+                    tech_name = device_map.get(int(tech_id), "—") if tech_id is not None else "—"
                     self.employee_history_table.setItem(row_idx, 0, QTableWidgetItem(str(date)))
                     self.employee_history_table.setItem(row_idx, 1, QTableWidgetItem(str(action)))
-                    self.employee_history_table.setItem(row_idx, 2, QTableWidgetItem(str(tech_name)))
+                    self.employee_history_table.setItem(row_idx, 2, QTableWidgetItem(tech_name))
                     self.employee_history_table.setItem(row_idx, 3, QTableWidgetItem(str(ticket)))
                     self.employee_history_table.setItem(row_idx, 4, QTableWidgetItem(str(desc)))
-
-
-            cursor.close()
-            conn.close()
 
         except Exception as e:
             print(f"Ошибка при загрузке данных сотрудника: {e}")

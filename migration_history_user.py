@@ -25,7 +25,7 @@ cursor.execute('''
 CREATE TABLE IF NOT EXISTS history_user (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     old_id INTEGER,
-    date NUM,
+    date DATETIME,
     type TEXT,
     user TEXT,
     description_of_change TEXT

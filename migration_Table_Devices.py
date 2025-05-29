@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS Table_Devices (
     characteristics TEXT,
     project TEXT,
     visible TEXT,
-    reserve TEXT
+    reserve TEXT,
+    sn_of_box TEXT,
+    sn_of_device TEXT
 );
 ''')
 
@@ -59,7 +61,7 @@ with open(TXT_FILE, "r", encoding="utf-8") as file:
                 date_of_supply, owner_of_device, assigned_to, status,
                 condition, inv_number, supplier, price, ship_number,
                 full_device_data, description, characteristics,
-                project, visible, reserve
+                project, visible, reserve, sn_of_box, sn_of_device
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         ''', (
             row[0].strip('"'),

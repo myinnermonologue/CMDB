@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLineEdit, QTextEdit, QComboBox,
-    QCompleter, QLabel, QTableWidget, QTableWidgetItem
+    QCompleter, QLabel, QTableWidget, QTableWidgetItem, QPushButton,QMessageBox
 )
 from PyQt6.QtCore import Qt
+from datetime import datetime
 from db import get_db_connection
 class TechnicMixin:
     def technic_action_func(self):
@@ -101,7 +102,9 @@ class TechnicMixin:
             right_layout.addWidget(self.search_field)
             right_layout.addWidget(QLabel("История изменения"))
             right_layout.addWidget(self.history_table)
-
+            save_button = QPushButton("Сохранить")
+            save_button.clicked.connect(self.save_changes)
+            left_form_layout.addRow(save_button)
             right_widget.setLayout(right_layout)
 
             # Финальный макет
@@ -216,3 +219,58 @@ class TechnicMixin:
     def on_device_selected(self, index):
         selected_text = self.search_field.itemText(index)
         self.populate_device_fields(selected_text)
+    
+    def save_changes(self):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Получаем old_id выбранного устройства
+        selected_text = self.search_field.currentText()
+        cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ?", (selected_text,))
+        result = cursor.fetchone()
+        if not result:
+            conn.close()
+            return
+        device_old_id = result[0]
+
+        # Пример обновления данных (обновите под нужные поля)
+        cursor.execute("""
+            UPDATE Table_Devices
+            SET assigned_to = (SELECT old_id FROM CKR_users WHERE full_name_tabel = ?),
+                serial_number = ?, condition = ?, status = ?, inv_number = ?,
+                year_of_release = ?, date_of_supply = ?, price = ?, owner_of_device = ?
+            WHERE old_id = ?
+        """, (
+            self.where_field.text(),
+            self.serial_field.text(),
+            self.condition_field.text(),
+            self.status_field.text(),
+            self.inventory_field.text(),
+            self.year_field.text(),
+            self.delivery_field.text(),
+            self.price_field.text(),
+            self.owner_field.text(),
+            device_old_id
+        ))
+
+        # Добавляем запись в History
+        # Добавляем запись в History
+        cursor.execute("""
+            INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
+                where_moved, from_moved, ticket, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            device_old_id,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # нужный формат
+            "Изменение",
+            self.current_user,  # при наличии — заменить на логин или имя
+            device_old_id,
+            None,
+            None,
+            "Ручное изменение",
+            self.comment_field.toPlainText()
+        ))
+
+        conn.commit()
+        conn.close()
+        QMessageBox.information(self, "Успешно", "Изменения успешно сохранены и записаны в историю.")

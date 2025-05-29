@@ -1,11 +1,12 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel, QComboBox, QCompleter,
     QCheckBox, QPushButton, QAbstractItemView, QMessageBox,
-    QListWidget, QTextEdit, QLineEdit
+    QListWidget, QTextEdit, QLineEdit,QListWidgetItem
 )
+from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt
 from db import get_db_connection
-from datetime import datetime
+from datetime import datetime, timedelta
 from pysqlcipher3 import dbapi2 as sqlite3
 class MoveMixin:
     def move_action_func(self): 
@@ -197,14 +198,13 @@ class MoveMixin:
             comment = self.comment_input.toPlainText()
 
             for selected_item in selected_items:
-                selected_text = selected_item.text()
+                original_device_data = selected_item.data(Qt.ItemDataRole.UserRole)
 
-                # Найдём ID техники
-                cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ? AND assigned_to = ?", (selected_text, from_id))
+                cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ? AND assigned_to = ?", (original_device_data, from_id))
                 device_id_row = cursor.fetchone()
 
                 if not device_id_row:
-                    print(f"Техника '{selected_text}' не найдена.")
+                    print(f"Техника '{original_device_data}' не найдена.")
                     continue
 
                 device_id = device_id_row[0]
@@ -234,7 +234,8 @@ class MoveMixin:
                 """, (next_old_id, now_str, action_type, user_name, device_id, to_id, from_id, ticket, comment))
 
                 # Обновляем интерфейс
-                self.list_right.addItem(selected_text)
+                visible_text = selected_item.text()
+                self.list_right.addItem(visible_text)
                 self.list_left.takeItem(self.list_left.row(selected_item))
 
             conn.commit()
@@ -269,54 +270,111 @@ class MoveMixin:
             "На списание": "на списание",
             "Списано": "списано"
         }
+
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            # Получаем ID пользователя
-            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (selected_full_name,))
+            # 1) Определяем идентификатор выбранного пользователя
+            cursor.execute(
+                "SELECT old_id FROM CKR_users WHERE full_name_tabel = ?",
+                (selected_full_name,)
+            )
             result = cursor.fetchone()
             if not result:
                 return
-
             user_old_id = result[0]
 
-            # Определяем нужные чекбоксы
+            # 2) Собираем список статусов из чекбоксов
             checkboxes = self.checkboxes_left if fio_combobox == self.fio_input else self.checkboxes_right
-
             selected_statuses = [
                 checkbox_to_db_status[cb.text()]
-                for cb in checkboxes if cb.isChecked() and cb.text() in checkbox_to_db_status
+                for cb in checkboxes
+                if cb.isChecked() and cb.text() in checkbox_to_db_status
             ]
 
-            if selected_statuses:
-                # Создаём 2 набора плейсхолдеров
-                placeholders_status = ','.join(['?'] * len(selected_statuses))
-                placeholders_condition = ','.join(['?'] * len(selected_statuses))
-                query = f"""
-                    SELECT full_device_data FROM Table_Devices 
-                    WHERE assigned_to = ? AND (
-                        status IN ({placeholders_status}) OR 
-                        condition IN ({placeholders_condition})
-                    )
-                """
-                # параметры: user_id, значения для status, значения для condition
-                params = [user_old_id] + selected_statuses + selected_statuses
-                cursor.execute(query, params)
-            else:
-                # Без фильтра
-                query = "SELECT full_device_data FROM Table_Devices WHERE assigned_to = ?"
-                cursor.execute(query, (user_old_id,))
+            # 3) Граница «24 часа назад» для фильтрации History
+            time_24_hours_ago = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
 
-            # Обновляем список
-            devices = cursor.fetchall()
+            # 4) Базовый SQL-запрос с JOIN на History, чтобы сразу узнать, 
+            #    была ли техника перемещена в последние 24 ч (was_moved_recently = 1)
+            base_query = """
+                SELECT 
+                    d.old_id,
+                    d.full_device_data,
+                    d.status,
+                    d.condition,
+                    CASE 
+                        WHEN h.tech_move IS NOT NULL THEN 1
+                        ELSE 0
+                    END as was_moved_recently
+                FROM Table_Devices d
+                LEFT JOIN (
+                    SELECT DISTINCT tech_move
+                    FROM History
+                    WHERE date >= ?
+                ) h ON d.old_id = h.tech_move
+                WHERE d.assigned_to = ?
+            """
+            params = [time_24_hours_ago, user_old_id]
+
+            # 5) Если есть галочки-фильтры по статусам/condition, добавляем их в WHERE
+            if selected_statuses:
+                placeholders = ','.join(['?'] * len(selected_statuses))
+                base_query += f" AND (d.status IN ({placeholders}) OR d.condition IN ({placeholders}))"
+                # каждый выбранный статус идёт дважды (для status и для condition)
+                params.extend(selected_statuses + selected_statuses)
+
+            cursor.execute(base_query, params)
+            devices = cursor.fetchall()  # [(old_id, full_device_data, status, condition, was_flag), …]
+
+            # 6) Очистка и установка шрифта QListWidget
             list_widget.clear()
-            for dev in devices:
-                if dev[0]:
-                    list_widget.addItem(dev[0])
+            list_widget.setFont(QFont("Courier New", 10))
+
+            # 7) Фиксированная ширина «весь список» в символах,
+            #    чтобы все скобки начинались в одной колонке
+            target_line_width = 107
+
+            for device_id, full_device_data, status, condition, was_recently_moved in devices:
+                if not full_device_data:
+                    continue
+
+                # 7.1) Формируем основной текст статуса: "status, condition"
+                status_parts = []
+                if status:
+                    status_parts.append(status)
+                if condition:
+                    status_parts.append(condition)
+                status_str = ", ".join(status_parts)
+
+                # 7.2) Добавляем один символ под часы: либо "⌚", либо пробел
+                clock_placeholder = "⌚" if was_recently_moved else " "  # один символ
+                if status_str:
+                    # если статус не пустой, то перед «placeholder» вставляем пробел
+                    status_with_clock = f"{status_str} {clock_placeholder}"
+                else:
+                    # если вообще нет статуса/condition, показываем только placeholder
+                    status_with_clock = f"{clock_placeholder}"
+
+                # 7.3) Оборачиваем всё в квадратные скобки
+                status_bracketed = f"{status_with_clock}"  # например: "[эксплуатация, исправно ⌚]"
+
+                # 7.4) Считаем, сколько пробелов добавить между full_device_data и статусом
+                spaces_needed = target_line_width - len(full_device_data) - len(status_bracketed)
+                spaces_needed = max(spaces_needed, 1)  # минимум один пробел
+
+                # 7.5) Собираем итоговую «выравненную» строку
+                padded_line = f"{full_device_data}{' ' * spaces_needed}{status_bracketed}"
+
+                # 7.6) Создаём QListWidgetItem и сохраняем «чистое» имя техники в UserRole
+                item = QListWidgetItem(padded_line)
+                item.setData(Qt.ItemDataRole.UserRole, full_device_data)
+                list_widget.addItem(item)
 
             cursor.close()
             conn.close()
 
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке техники: {e}")
+

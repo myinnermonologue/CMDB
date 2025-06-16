@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QToolBar, QWidget, QFormLayout, QComboBox, QLineEdit, QTextEdit, QDateTimeEdit,
-    QPushButton, QMessageBox, QCompleter,QSpinBox
+    QPushButton, QMessageBox, QCompleter,QSpinBox,QApplication
 )
 from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt, QDateTime
@@ -74,6 +74,9 @@ class ToolbarMixin:
         if hasattr(self, "current_user_role") and self.current_user_role and self.current_user_role.lower() in ["manager", "auditor"]:
             for action in restricted_actions:
                 toolbar.removeAction(action)
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.setMaximumSize(screen.width(), screen.height())
 
     
 
@@ -299,7 +302,7 @@ class ToolbarMixin:
                     tech_move, where_moved, from_moved, ticket, description
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                new_hist_id, new_hist_old_id, now_str, "создание нового", "test",
+                new_hist_id, new_hist_old_id, now_str, "создание нового", self.current_user,
                 new_old_id, assigned_to, None, None, self.comment_input.toPlainText().strip()
             ))
 

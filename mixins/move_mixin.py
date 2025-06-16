@@ -1,13 +1,13 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel, QComboBox, QCompleter,
-    QCheckBox, QPushButton, QAbstractItemView, QMessageBox,
-    QListWidget, QTextEdit, QLineEdit,QListWidgetItem
+    QCheckBox, QPushButton, QAbstractItemView, QMessageBox,QSizePolicy,
+    QListWidget, QTextEdit, QLineEdit,QListWidgetItem,QApplication
 )
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt
 from db import get_db_connection
 from datetime import datetime, timedelta
-from pysqlcipher3 import dbapi2 as sqlite3
+from sqlcipher3 import dbapi2 as sqlite3
 class MoveMixin:
     def move_action_func(self): 
         main_widget = QWidget()
@@ -88,6 +88,7 @@ class MoveMixin:
         grid.addWidget(QLabel("Комментарий к обращению"), 6, 0)
         self.comment_input = QTextEdit()
         self.comment_input.setFixedHeight(60)
+        
         grid.addWidget(self.comment_input, 7, 0)
 
         # === Списки устройств ===
@@ -95,12 +96,15 @@ class MoveMixin:
         self.list_right = QListWidget()
         self.list_left.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.list_right.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self.list_left.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.list_right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         grid.addWidget(self.list_left, 8, 0)
         grid.addWidget(self.list_right, 8, 2)
 
         # === Кнопка перемещения ===
         move_layout = QVBoxLayout()
         self.move_right_btn = QPushButton("Переместить---->>>")
+        self.move_right_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.move_right_btn.setFixedHeight(60)
         move_layout.addWidget(self.move_right_btn)
         grid.addLayout(move_layout, 8, 1)
@@ -111,13 +115,12 @@ class MoveMixin:
         options = [
             "Хранение", "Перемещение", "Поиск", "Резерв",
             "Исправно", "Не исправно", "Ремонт", "На списание",
-            "Списано", "Утиль", "Показать уволенных"
+            "Списано", "Утиль"
         ]
 
         self.checkboxes_left = [QCheckBox(opt) for opt in options]
         self.checkboxes_right = [QCheckBox(opt) for opt in options]
 
-        # Левая сторона чекбоксов
         row, col = 0, 0
         for cb in self.checkboxes_left:
             checkbox_grid_left.addWidget(cb, row, col)
@@ -126,21 +129,25 @@ class MoveMixin:
                 col = 0
                 row += 1
 
-        # Правая сторона чекбоксов
         row, col = 0, 0
         for cb in self.checkboxes_right:
             checkbox_grid_right.addWidget(cb, row, col)
             col += 1
             if col >= 2:
                 col = 0
-                row += 1
-
-        # Добавляем чекбоксы в сетку
+                row += 1    
+    
         grid.addLayout(checkbox_grid_left, 9, 0)
         grid.addLayout(checkbox_grid_right, 9, 2)
 
+        # Настройка растягивания колонок
+        grid.setColumnStretch(0, 3)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 3)
+
         # Финальная сборка
         main_layout.addLayout(grid)
+        main_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCentralWidget(main_widget)
 
         for cb in self.checkboxes_left:
@@ -153,6 +160,7 @@ class MoveMixin:
         else:
             self.move_right_btn.clicked.connect(self.move_device_between_users)
 
+        
     def move_device_between_users(self):
         selected_items = self.list_left.selectedItems()
 
@@ -191,7 +199,7 @@ class MoveMixin:
             to_id = to_user_id[0]
 
             now = datetime.now()
-            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+            now_str = now.strftime("%d.%m.%Y %H:%M:%S")
             user_name = self.current_user
             ticket = self.request_input.text()
             action_type = self.combo_move_type.currentText()
@@ -334,7 +342,7 @@ class MoveMixin:
 
             # 7) Фиксированная ширина «весь список» в символах,
             #    чтобы все скобки начинались в одной колонке
-            target_line_width = 107
+            target_line_width = 99
 
             for device_id, full_device_data, status, condition, was_recently_moved in devices:
                 if not full_device_data:

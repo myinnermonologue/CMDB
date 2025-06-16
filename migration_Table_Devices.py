@@ -3,8 +3,8 @@ from pysqlcipher3 import dbapi2 as sqlite
 import csv
 from dotenv import load_dotenv
 
-DB_NAME = "DB.db"
-TXT_FILE = "4.txt"
+DB_NAME = "Database_CMDB.db"
+TXT_FILE = "Tab_Tehnik.txt"
 
 load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
@@ -42,18 +42,14 @@ CREATE TABLE IF NOT EXISTS Table_Devices (
     characteristics TEXT,
     project TEXT,
     visible TEXT,
-    reserve TEXT,
-    sn_of_box TEXT,
-    sn_of_device TEXT
+    reserve TEXT
 );
 ''')
 
 # Чтение и вставка данных из 4.txt
-with open(TXT_FILE, "r", encoding="utf-8") as file:
+with open(TXT_FILE, "r", encoding="cp1251") as file:
     reader = csv.reader(file, delimiter=";")
     for row in reader:
-        if len(row) < 20:
-            continue  # Пропуск строк с недостатком данных
 
         cursor.execute('''
             INSERT INTO Table_Devices (
@@ -61,7 +57,7 @@ with open(TXT_FILE, "r", encoding="utf-8") as file:
                 date_of_supply, owner_of_device, assigned_to, status,
                 condition, inv_number, supplier, price, ship_number,
                 full_device_data, description, characteristics,
-                project, visible, reserve, sn_of_box, sn_of_device
+                project, visible, reserve
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         ''', (
             row[0].strip('"'),

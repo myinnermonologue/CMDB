@@ -29,6 +29,9 @@ class TechnicMixin:
             self.price_field = QLineEdit()
             self.owner_field = QLineEdit()
             self.location_field = QLineEdit()
+            self.part_field = QLineEdit()
+
+
 
             left_form_layout.addRow("Где находится:", self.where_field)
             left_form_layout.addRow("Серийный:", self.serial_field)
@@ -40,7 +43,7 @@ class TechnicMixin:
             left_form_layout.addRow("Статус:", self.status_field)
             left_form_layout.addRow("Инвентарный №:", self.inventory_field)
             left_form_layout.addRow("Год выпуска:", self.year_field)
-            left_form_layout.addRow("Партномер:", QLineEdit())  # необязательное поле
+            left_form_layout.addRow("Партномер:", self.part_field)
             left_form_layout.addRow("Поставщик:", self.provider_field)
             left_form_layout.addRow("Дата поставки:", self.delivery_field)
             left_form_layout.addRow("Стоимость:", self.price_field)
@@ -53,7 +56,40 @@ class TechnicMixin:
             self.comment_field.setFixedHeight(50)
             comment_layout.addWidget(self.comment_field)
             left_form_layout.addRow("Комментарий:", comment_layout)
+                        # Поля, которые можно редактировать
+            editable_fields = {
+                self.serial_field,
+                self.condition_field,
+                self.status_field,
+                self.inventory_field,
+                self.year_field,
+                self.part_field,
+                self.provider_field,
+                self.delivery_field,
+                self.price_field,
+                self.owner_field
+            }
 
+            # Устанавливаем только нужные как редактируемые
+            for field in [
+                self.where_field,
+                self.type_field,
+                self.subtype_field,
+                self.manufacturer_field,
+                self.model_field,
+                self.location_field,
+            ]:
+                field.setReadOnly(True)
+
+            # Для всех остальных — явно отключаем редактирование, если не входит в editable
+            for field in [
+                self.serial_field, self.condition_field, self.status_field, self.inventory_field,
+                self.year_field, self.part_field, self.provider_field, self.delivery_field,
+                self.price_field, self.owner_field
+            ]:
+                field.setReadOnly(False)
+
+            self.comment_field.setReadOnly(False)
             left_widget.setLayout(left_form_layout)
             left_widget.setFixedWidth(500)
 
@@ -69,7 +105,7 @@ class TechnicMixin:
             self.search_field.setEditable(True)
             self.search_field.setPlaceholderText("Поиск устройства...")
             self.search_field.setFixedHeight(30)
-
+            
             # Загрузка данных из базы
             def load_device_data():
                 conn = get_db_connection()
@@ -144,7 +180,7 @@ class TechnicMixin:
 
         # Получаем данные из таблицы CKR_users по assigned_to
         cursor.execute("""
-            SELECT full_name_tabel
+            SELECT full_name_tabel, address
             FROM CKR_users
             WHERE old_id = ?
         """, (assigned_to,))
@@ -152,9 +188,11 @@ class TechnicMixin:
 
         # Проверяем, если результат не пустой
         if user_result:
-            full_name_tabel = user_result[0]  # Получаем значение поля full_name_tabel
+            full_name_tabel = user_result[0]
+            user_address = user_result[1]
         else:
             full_name_tabel = "Не найден"
+            user_address = ""
 
         # Получаем данные из tech_types по old_id = device_type
         cursor.execute("""
@@ -185,7 +223,8 @@ class TechnicMixin:
         self.delivery_field.setText(str(date_of_supply or ""))
         self.price_field.setText(str(price or ""))
         self.owner_field.setText(str(owner_of_device or ""))
-        
+        self.location_field.setText(str(user_address or ""))
+
                 # Получаем old_id устройства
         cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ?", (selected_text,))
         device_id_result = cursor.fetchone()
@@ -224,7 +263,7 @@ class TechnicMixin:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Получаем old_id выбранного устройства
+        # Получаем old_id устройства
         selected_text = self.search_field.currentText()
         cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ?", (selected_text,))
         result = cursor.fetchone()
@@ -233,44 +272,108 @@ class TechnicMixin:
             return
         device_old_id = result[0]
 
-        # Пример обновления данных (обновите под нужные поля)
+        # Получаем текущие значения из базы
         cursor.execute("""
-            UPDATE Table_Devices
-            SET assigned_to = (SELECT old_id FROM CKR_users WHERE full_name_tabel = ?),
-                serial_number = ?, condition = ?, status = ?, inv_number = ?,
-                year_of_release = ?, date_of_supply = ?, price = ?, owner_of_device = ?
+            SELECT serial_number, condition, status, inv_number, year_of_release,
+                part_number, supplier, date_of_supply, price, owner_of_device
+            FROM Table_Devices
             WHERE old_id = ?
-        """, (
-            self.where_field.text(),
+        """, (device_old_id,))
+        current_data = cursor.fetchone()
+
+        if not current_data:
+            conn.close()
+            return
+
+        # Значения из формы
+        new_data = (
             self.serial_field.text(),
             self.condition_field.text(),
             self.status_field.text(),
             self.inventory_field.text(),
             self.year_field.text(),
+            self.part_field.text(),
+            self.provider_field.text(),
             self.delivery_field.text(),
             self.price_field.text(),
-            self.owner_field.text(),
-            device_old_id
-        ))
+            self.owner_field.text()
+        )
 
-        # Добавляем запись в History
-        # Добавляем запись в History
+        fields = [
+            'Серийный номер',
+            'Состояние',
+            'Статус',
+            'Инвентарный №',
+            'Год выпуска',
+            'Партномер',
+            'Поставщик',
+            'Дата поставки',
+            'Стоимость',
+            'Собственник'
+        ]
+
+        db_fields = [
+            'serial_number', 'condition', 'status', 'inv_number', 'year_of_release',
+            'part_number', 'supplier', 'date_of_supply', 'price', 'owner_of_device'
+        ]
+
+        # Обновление Table_Devices
         cursor.execute("""
-            INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
-                where_moved, from_moved, ticket, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            device_old_id,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # нужный формат
-            "Изменение",
-            self.current_user,  # при наличии — заменить на логин или имя
-            device_old_id,
-            None,
-            None,
-            "Ручное изменение",
-            self.comment_field.toPlainText()
-        ))
+            UPDATE Table_Devices
+            SET serial_number = ?, condition = ?, status = ?, inv_number = ?,
+                year_of_release = ?, part_number = ?, supplier = ?, date_of_supply = ?,
+                price = ?, owner_of_device = ?,
+                assigned_to = (SELECT old_id FROM CKR_users WHERE full_name_tabel = ?)
+            WHERE old_id = ?
+        """, new_data + (self.where_field.text(), device_old_id))
+
+        # Получаем текущее значение max(old_id) в History
+        cursor.execute("SELECT COALESCE(MAX(old_id), 0) FROM History")
+        history_id = cursor.fetchone()[0] + 1
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Проверяем, какие поля изменились и записываем в History
+        for index, (old, new) in enumerate(zip(current_data, new_data)):
+            if (old or "") != (new or ""):
+                field_name = fields[index]
+
+                # Запись 1: было
+                cursor.execute("""
+                    INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
+                        where_moved, from_moved, ticket, description)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    history_id,
+                    now,
+                    "Изменение",
+                    self.current_user,
+                    device_old_id,
+                    None,
+                    None,
+                    None,
+                    f"{field_name} было: {old}"
+                ))
+                history_id += 1
+
+                # Запись 2: стало
+                cursor.execute("""
+                    INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
+                        where_moved, from_moved, ticket, description)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    history_id,
+                    now,
+                    "Изменение",
+                    self.current_user,
+                    device_old_id,
+                    None,
+                    None,
+                    None,
+                    f"{field_name} стало: {new}"
+                ))
+                history_id += 1
 
         conn.commit()
         conn.close()
-        QMessageBox.information(self, "Успешно", "Изменения успешно сохранены и записаны в историю.")
+        QMessageBox.information(self, "Успешно", "Изменения сохранены и записаны в историю.")

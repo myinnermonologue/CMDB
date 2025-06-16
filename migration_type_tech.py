@@ -2,13 +2,10 @@ import os
 from pysqlcipher3 import dbapi2 as sqlite
 import csv
 from dotenv import load_dotenv
-DB_NAME = "DB.db"  # Задайте свой пароль
-TXT_FILE = "1.txt"
+DB_NAME = "Database_CMDB.db"
+TXT_FILE = "dll_Tip.txt"
 load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
-# Удалим базу, если уже существует (для тестов)
-if os.path.exists(DB_NAME):
-    os.remove(DB_NAME)
 
 # Создание зашифрованной базы
 conn = sqlite.connect(DB_NAME)
@@ -23,7 +20,7 @@ cursor.execute("PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512")
 
 # Создание таблицы
 cursor.execute('''
-CREATE TABLE tech_types (
+CREATE TABLE IF NOT EXISTS tech_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     old_id INTEGER,
     type_tech TEXT,
@@ -39,11 +36,9 @@ CREATE TABLE tech_types (
 ''')
 
 # Чтение txt и вставка данных
-with open(TXT_FILE, "r", encoding="utf-8") as file:
+with open(TXT_FILE, "r", encoding="cp1251") as file:
     reader = csv.reader(file, delimiter=";")
     for row in reader:
-        if len(row) < 10:
-            continue  # пропуск строк с недостаточным количеством полей
         cursor.execute('''
             INSERT INTO tech_types (
                 old_id, type_tech, additional_type, brand, model,

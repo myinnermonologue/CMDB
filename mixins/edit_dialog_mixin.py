@@ -1,5 +1,5 @@
 from db import get_db_connection
-from pysqlcipher3 import dbapi2 as sqlite3
+from sqlcipher3 import dbapi2 as sqlite3
 from dialogs import EditDialog
 from PyQt6.QtWidgets import QMessageBox
 class EditDialogMixin:

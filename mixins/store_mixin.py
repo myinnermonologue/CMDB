@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from pathlib import Path
 from datetime import datetime
-from pysqlcipher3 import dbapi2 as sqlite3
+from sqlcipher3 import dbapi2 as sqlite3
 class StoreMixin:
     def store_action_func(self):
         main_widget = QWidget()

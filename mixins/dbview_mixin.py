@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem
 )
 from db import get_db_connection
-from pysqlcipher3 import dbapi2 as sqlite3
+from sqlcipher3 import dbapi2 as sqlite3
 class DbViewMixin:
     def __init__(self):
         self.records_per_page = 50  # или любое другое число
@@ -85,25 +85,42 @@ class DbViewMixin:
 
     def show_db_func(self, array, query):
         layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)  # Отступы по краям
+        layout.setSpacing(10)  # Расстояние между элементами
+
         self.current_query = query 
+
         self.data_table = QTableWidget()
         self.data_table.setColumnCount(len(array))
         self.data_table.setHorizontalHeaderLabels(array)
         self.data_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.data_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.data_table.cellClicked.connect(self.on_cell_click)
+
+        # Таблица занимает всё доступное пространство
+        self.data_table.setSizePolicy(
+            self.data_table.sizePolicy().horizontalPolicy(),
+            self.data_table.sizePolicy().verticalPolicy().Expanding
+        )
+
         layout.addWidget(self.data_table)
 
-        # Кнопки пагинации
+        # Кнопки пагинации с выравниванием по центру
         pagination_layout = QHBoxLayout()
+        pagination_layout.addStretch(1)
         self.btn_prev = QPushButton("← Назад")
         self.btn_next = QPushButton("Вперёд →")
         self.page_label = QLabel()
+        self.page_label.setFixedWidth(120)  # чтобы не скакал текст
+
         self.btn_prev.clicked.connect(self.go_to_prev_page)
         self.btn_next.clicked.connect(self.go_to_next_page)
+
         pagination_layout.addWidget(self.btn_prev)
         pagination_layout.addWidget(self.page_label)
         pagination_layout.addWidget(self.btn_next)
+        pagination_layout.addStretch(1)
+
         layout.addLayout(pagination_layout)
 
         container = QWidget()
@@ -111,12 +128,9 @@ class DbViewMixin:
         self.setCentralWidget(container)
 
         # Инициализация пагинации
-        self.current_query = query
-        self.current_table_name = self.extract_table_name(query)
         self.current_page = 0
         self.update_total_record_count(query)
         self.load_data_db_with_pagination(query)
-        self.current_query = query
 
     def extract_table_name(self, query):
         # Простой способ вытащить имя таблицы из SELECT-запроса

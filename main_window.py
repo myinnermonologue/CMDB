@@ -1,5 +1,5 @@
 import sys
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QFileDialog, QMessageBox, QApplication
 from PyQt6.QtCore import QTimer
 from mixins.toolbar_mixin import ToolbarMixin
 from mixins.technic_mixin import TechnicMixin
@@ -7,11 +7,11 @@ from mixins.employee_mixin import EmployeeMixin
 from mixins.store_mixin import StoreMixin
 from mixins.move_mixin import MoveMixin
 from mixins.dbview_mixin import DbViewMixin
+from PyQt6.QtGui import QIcon
 from mixins.edit_dialog_mixin import EditDialogMixin
 import os # для получения имени пользователя
 from openpyxl import Workbook, load_workbook
 from db import get_db_connection
-
 class MainWindow(
     QMainWindow,
     ToolbarMixin,
@@ -23,7 +23,9 @@ class MainWindow(
     EditDialogMixin
 ):
     def __init__(self):
+
         super().__init__()
+        self.setWindowIcon(QIcon("ico.ico"))
         self.setWindowTitle("CSC_CMDB")
         self.current_user_role = None  # или получить из логина пользователя
         domain = os.environ.get("USERDOMAIN")
@@ -36,13 +38,14 @@ class MainWindow(
         self.current_query = ""
         self.current_table_name = ""
         # -----------------------   ----
-        if domain.upper() != "PC_NEAKTUALNO":
+        if domain.upper() != "PC_NEAKTUALNO" and domain.upper() != "CSCENTR" and domain.upper() != "DESKTOP-FCQOV2G":
             QMessageBox.critical(None, "Ошибка доступа", f"Недопустимый домен: {domain}")
             sys.exit()
 
         # Проверка пользователя в БД
-        if not self.is_user_in_db(username):
-            QMessageBox.critical(None, "Ошибка доступа", f"Пользователь {username} не найден в системе.")
+        if not self.is_user_in_db(self.current_user):
+            QMessageBox.critical(None, "Ошибка доступа", f"Пользователь {self.current_user} не найден в системе.")
+            QMessageBox.critical(None, "Ошибка доступа", f"{domain}, {username} не имеет доступа к системе.")
             sys.exit()
             
         QTimer.singleShot(100, lambda: QMessageBox.information(
@@ -64,17 +67,40 @@ class MainWindow(
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT full_name, role FROM it_users WHERE LOWER(username) = LOWER(?)", (username,))
+            cursor.execute(
+                "SELECT full_name, role, active FROM it_users WHERE LOWER(username) = LOWER(?)",
+                (username,)
+            )
             result = cursor.fetchone()
             conn.close()
+
             if result:
-                full_name, role = result
+                full_name, role, active = result
+                if active is None or active.strip().lower() != "да":
+                    QMessageBox.warning(
+                        None,
+                        "Доступ запрещён",
+                        f"Пользователь «{full_name}» деактивирован и не имеет доступа к системе."
+                    )
+                    return False
+
                 self.current_user_full_name = full_name
                 self.current_user_role = role
                 return True
+
+            QMessageBox.warning(
+                None,
+                "Доступ запрещён",
+                f"Пользователь: {username} не найден в системе. Возможно, вы не зарегистрированы или ваша роль не соответствует требованиям доступа."
+            )
             return False
+
         except Exception as e:
-            print(f"Ошибка при проверке пользователя: {e}")
+            QMessageBox.critical(
+                None,
+                "Ошибка",
+                f"Ошибка при проверке пользователя: {e}"
+            )
             return False
         
     def check_disabled_users_devices(self):

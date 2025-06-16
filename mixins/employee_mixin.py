@@ -340,15 +340,6 @@ class EmployeeMixin:
                 cursor.execute("SELECT old_id, full_device_data FROM Table_Devices")
                 device_map = {int(row[0]): row[1] for row in cursor.fetchall() if row[1]}
 
-                # Загружаем историю для сотрудника
-                cursor.execute("""
-                    SELECT date, type_of_action, tech_move, ticket, description
-                    FROM History
-                    WHERE where_moved = ?
-                    ORDER BY date DESC
-                """, (user_id,))
-                history_rows = cursor.fetchall()
-
                 self.employee_history_table.setRowCount(len(history_rows))
 
                 for row_idx, (date, action, tech_id, ticket, desc) in enumerate(history_rows):

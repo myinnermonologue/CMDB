@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel, QComboBox, QCompleter,
     QCheckBox, QPushButton, QAbstractItemView, QMessageBox,QSizePolicy,
-    QListWidget, QTextEdit, QLineEdit,QListWidgetItem,QApplication
+    QListWidget, QTextEdit, QLineEdit,QListWidgetItem
 )
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt
@@ -100,6 +100,19 @@ class MoveMixin:
         self.list_right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         grid.addWidget(self.list_left, 8, 0)
         grid.addWidget(self.list_right, 8, 2)
+        
+        
+        highlight_style = """
+        QListWidget::item:selected {
+            background-color: #0078d7;  /* ярко-синий цвет */
+            color: white;               /* белый текст */
+            font-weight: bold;          /* жирный шрифт */
+        }
+        """
+
+        self.list_left.setStyleSheet(highlight_style)
+        self.list_right.setStyleSheet(highlight_style)
+        
 
         # === Кнопка перемещения ===
         move_layout = QVBoxLayout()
@@ -342,7 +355,7 @@ class MoveMixin:
 
             # 7) Фиксированная ширина «весь список» в символах,
             #    чтобы все скобки начинались в одной колонке
-            target_line_width = 99
+            target_line_width = 97
 
             for device_id, full_device_data, status, condition, was_recently_moved in devices:
                 if not full_device_data:

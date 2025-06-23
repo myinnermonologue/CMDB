@@ -7,7 +7,10 @@ excel.py
 response.json
 zoom.py
 zoom_convert.py
-
+c/
+*.txt
+*.mdb
+*.db
 # C extensions
 *.so
 # Excel

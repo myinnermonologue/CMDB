@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QComboBox, QCompleter,
-    QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView, QMessageBox, QLineEdit
+    QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QComboBox, QCompleter,QLineEdit,
+    QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from db import get_db_connection
@@ -9,7 +9,6 @@ from openpyxl.utils import get_column_letter
 from pathlib import Path
 from datetime import datetime
 from sqlcipher3 import dbapi2 as sqlite3
-
 class StoreMixin:
     def store_action_func(self):
         main_widget = QWidget()
@@ -17,6 +16,7 @@ class StoreMixin:
 
         # Левая панель
         left_panel = QVBoxLayout()
+
         left_panel.addWidget(QLabel("Объект"))
         self.fio_input = QComboBox()
         self.fio_input.setEditable(True)
@@ -68,6 +68,7 @@ class StoreMixin:
             if col >= 2:
                 col = 0
                 row += 1
+
         left_panel.addLayout(checkbox_grid)
 
         self.btn_export_all_tech = QPushButton("Выгрузить всю технику")
@@ -80,30 +81,25 @@ class StoreMixin:
         for btn in [
             self.btn_export_all_tech,
             self.btn_export_all_users,
-            self.btn_export_all_events,
+            self.btn_export_all_events
         ]:
             btn.setFixedHeight(50)
             left_panel.addWidget(btn)
 
-        # Правая часть — поиск + таблица
+        # Правая часть
         right_panel = QVBoxLayout()
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Поиск...")
+        self.search_input.setPlaceholderText("Поиск по технике...")
         self.search_input.textChanged.connect(self.filter_store_table)
         right_panel.addWidget(self.search_input)
 
         self.store_table = QTableWidget()
-        self.store_table.setSortingEnabled(True)
         self.store_table.setColumnCount(4)
         self.store_table.setHorizontalHeaderLabels(["Техника", "Статус", "Состояние", "Год выпуска"])
         self.store_table.horizontalHeader().setStretchLastSection(True)
         self.store_table.setColumnWidth(0, 500)
-        self.store_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.store_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.store_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
-        self.store_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
+        self.store_table.setSortingEnabled(True)  # Включить сортировку
         right_panel.addWidget(self.store_table)
 
         main_layout.addLayout(left_panel, 1)
@@ -114,6 +110,21 @@ class StoreMixin:
         self.fio_input.currentIndexChanged.connect(self.update_store_table)
         for cb in self.checkboxes_store:
             cb.stateChanged.connect(self.update_store_table)
+
+        self.store_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.store_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.store_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.store_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+    def filter_store_table(self):
+        search_text = self.search_input.text().lower()
+        for row in range(self.store_table.rowCount()):
+            item = self.store_table.item(row, 0)  # колонка «Техника»
+            if item is not None and search_text in item.text().lower():
+                self.store_table.setRowHidden(row, False)
+            else:
+                self.store_table.setRowHidden(row, True)
+
 
     def update_store_table(self):
         selected_full_name = self.fio_input.currentText()
@@ -137,18 +148,22 @@ class StoreMixin:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
+
             cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (selected_full_name,))
             result = cursor.fetchone()
             if not result:
                 return
 
             user_old_id = result[0]
+
+            # Получаем выбранные статусы из чекбоксов
             selected_statuses = [
                 checkbox_to_status[cb.text()]
                 for cb in self.checkboxes_store
                 if cb.isChecked() and cb.text() in checkbox_to_status
             ]
 
+            # Формируем SQL-запрос
             if selected_statuses:
                 placeholders_status = ','.join(['?'] * len(selected_statuses))
                 placeholders_condition = ','.join(['?'] * len(selected_statuses))
@@ -162,6 +177,7 @@ class StoreMixin:
                 """
                 params = [user_old_id] + selected_statuses + selected_statuses
                 cursor.execute(query, params)
+
             else:
                 query = """
                     SELECT full_device_data, status, condition, year_of_release 
@@ -169,6 +185,7 @@ class StoreMixin:
                     WHERE assigned_to = ?
                 """
                 cursor.execute(query, (user_old_id,))
+
             records = cursor.fetchall()
 
             self.store_table.setRowCount(len(records))
@@ -178,26 +195,11 @@ class StoreMixin:
                     item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                     self.store_table.setItem(row_idx, col_idx, item)
 
-            # Сортировка по первой колонке (алфавит)
-            self.store_table.sortItems(0, Qt.SortOrder.AscendingOrder)
-
-            self.filter_store_table()
-            
             cursor.close()
             conn.close()
+
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке техники для склада: {e}")
-
-    def filter_store_table(self):
-        filter_text = self.search_input.text().strip().lower()
-        for row in range(self.store_table.rowCount()):
-            match = False
-            for col in range(self.store_table.columnCount()):
-                item = self.store_table.item(row, col)
-                if item and filter_text in item.text().lower():
-                    match = True
-                    break
-            self.store_table.setRowHidden(row, not match)
 
     def export_all_users_to_excel(self):
         try:
@@ -387,4 +389,3 @@ class StoreMixin:
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
-        

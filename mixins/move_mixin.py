@@ -9,11 +9,40 @@ from db import get_db_connection
 from datetime import datetime, timedelta
 from sqlcipher3 import dbapi2 as sqlite3
 class MoveMixin:
+    def load_users(self, combobox, show_disabled_cb):
+        combobox.clear()
+        combobox.addItem("")
+        user_list = []
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            if show_disabled_cb and show_disabled_cb.isChecked():
+                cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
+            else:
+                cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users WHERE status = 'Enabled' ORDER BY full_name_tabel ASC")
+
+            items = cursor.fetchall()
+            for item in items:
+                if item[0]:
+                    user_list.append(str(item[0]))
+                    combobox.addItem(str(item[0]))
+
+            completer = QCompleter(user_list, combobox)
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchFlag.MatchContains)
+            combobox.setCompleter(completer)
+
+            cursor.close()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"Ошибка при загрузке ФИО: {e}")
+
     def move_action_func(self): 
         main_widget = QWidget()
         main_layout = QVBoxLayout(main_widget)
 
-        # Основная сетка
         grid = QGridLayout()
 
         # === Отправитель ===
@@ -23,26 +52,6 @@ class MoveMixin:
         self.fio_input.addItem("")
         grid.addWidget(self.fio_input, 1, 0)
 
-        user_list_input = []
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
-            items = cursor.fetchall()
-            for item in items:
-                if item[0]:
-                    user_list_input.append(str(item[0]))
-                    self.fio_input.addItem(str(item[0]))
-            cursor.close()
-            conn.close()
-        except sqlite3.Error as e:
-            print(f"Ошибка при загрузке ФИО: {e}")
-
-        completer = QCompleter(user_list_input, self.fio_input)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.fio_input.setCompleter(completer)
-
         # === Получатель ===
         grid.addWidget(QLabel("Объект"), 0, 2)
         self.fio_output = QComboBox()
@@ -50,46 +59,74 @@ class MoveMixin:
         self.fio_output.addItem("")
         grid.addWidget(self.fio_output, 1, 2)
 
-        user_list_output = []
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
-            items = cursor.fetchall()
-            for item in items:
-                if item[0]:
-                    user_list_output.append(str(item[0]))
-                    self.fio_output.addItem(str(item[0]))
-            cursor.close()
-            conn.close()
-        except sqlite3.Error as e:
-            print(f"Ошибка при загрузке ФИО: {e}")
+        # === Чекбоксы ===
+        checkbox_grid_left = QGridLayout()
+        checkbox_grid_right = QGridLayout()
+        options = [
+            "Хранение", "Перемещение", "Поиск", "Резерв",
+            "Исправно", "Не исправно", "Ремонт", "На списание",
+            "Списано", "Утиль", "Показать уволенных"
+        ]
 
-        completer_output = QCompleter(user_list_output, self.fio_output)
-        completer_output.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer_output.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.fio_output.setCompleter(completer_output)
+        self.checkboxes_left = []
+        self.checkboxes_right = []
+        self.show_disabled_left_cb = None
+        self.show_disabled_right_cb = None
+
+        row, col = 0, 0
+        for opt in options:
+            cb = QCheckBox(opt)
+            if opt == "Показать уволенных":
+                self.show_disabled_left_cb = cb
+            self.checkboxes_left.append(cb)
+            checkbox_grid_left.addWidget(cb, row, col)
+            col += 1
+            if col >= 2:
+                col = 0
+                row += 1
+
+        row, col = 0, 0
+        for opt in options:
+            cb = QCheckBox(opt)
+            if opt == "Показать уволенных":
+                self.show_disabled_right_cb = cb
+            self.checkboxes_right.append(cb)
+            checkbox_grid_right.addWidget(cb, row, col)
+            col += 1
+            if col >= 2:
+                col = 0
+                row += 1    
+
+        grid.addLayout(checkbox_grid_left, 10, 0)
+        grid.addLayout(checkbox_grid_right, 10, 2)
+
+
+        # === Загрузка пользователей ===
+        self.load_users(self.fio_input, self.show_disabled_left_cb)
+        self.load_users(self.fio_output, self.show_disabled_right_cb)
 
         self.fio_input.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
         self.fio_output.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
 
+        self.show_disabled_left_cb.stateChanged.connect(lambda: self.load_users(self.fio_input, self.show_disabled_left_cb))
+        self.show_disabled_right_cb.stateChanged.connect(lambda: self.load_users(self.fio_output, self.show_disabled_right_cb))
+
         # === № обращения ===
-        grid.addWidget(QLabel("№ обращения"), 2, 0)
+        grid.addWidget(QLabel("№ обращения"), 3, 0)
         self.request_input = QLineEdit()
-        grid.addWidget(self.request_input, 3, 0)
+        grid.addWidget(self.request_input, 4, 0)
 
         # === Тип движения ===
-        grid.addWidget(QLabel("Тип движения"), 4, 0)
+        grid.addWidget(QLabel("Тип движения"), 5, 0)
         self.combo_move_type = QComboBox()
         self.combo_move_type.addItems(["выдача", "перемещение", "на склад", "в поиск", "изменение"])
-        grid.addWidget(self.combo_move_type, 5, 0)
+        grid.addWidget(self.combo_move_type, 6, 0)
 
         # === Комментарий ===
-        grid.addWidget(QLabel("Комментарий к обращению"), 6, 0)
+        grid.addWidget(QLabel("Комментарий к обращению"), 7, 0)
         self.comment_input = QTextEdit()
         self.comment_input.setFixedHeight(60)
-        
-        grid.addWidget(self.comment_input, 7, 0)
+        grid.addWidget(self.comment_input, 8, 0)
 
         # === Списки устройств ===
         self.list_left = QListWidget()
@@ -98,21 +135,18 @@ class MoveMixin:
         self.list_right.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.list_left.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.list_right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        grid.addWidget(self.list_left, 8, 0)
-        grid.addWidget(self.list_right, 8, 2)
-        
-        
+        grid.addWidget(self.list_left, 9, 0)
+        grid.addWidget(self.list_right, 9, 2)
+
         highlight_style = """
         QListWidget::item:selected {
-            background-color: #0078d7;  /* ярко-синий цвет */
-            color: white;               /* белый текст */
-            font-weight: bold;          /* жирный шрифт */
+            background-color: #0078d7;
+            color: white;
+            font-weight: bold;
         }
         """
-
         self.list_left.setStyleSheet(highlight_style)
         self.list_right.setStyleSheet(highlight_style)
-        
 
         # === Кнопка перемещения ===
         move_layout = QVBoxLayout()
@@ -120,38 +154,7 @@ class MoveMixin:
         self.move_right_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.move_right_btn.setFixedHeight(60)
         move_layout.addWidget(self.move_right_btn)
-        grid.addLayout(move_layout, 8, 1)
-
-        # === Чекбоксы ===
-        checkbox_grid_left = QGridLayout()
-        checkbox_grid_right = QGridLayout()
-        options = [
-            "Хранение", "Перемещение", "Поиск", "Резерв",
-            "Исправно", "Не исправно", "Ремонт", "На списание",
-            "Списано", "Утиль"
-        ]
-
-        self.checkboxes_left = [QCheckBox(opt) for opt in options]
-        self.checkboxes_right = [QCheckBox(opt) for opt in options]
-
-        row, col = 0, 0
-        for cb in self.checkboxes_left:
-            checkbox_grid_left.addWidget(cb, row, col)
-            col += 1
-            if col >= 2:
-                col = 0
-                row += 1
-
-        row, col = 0, 0
-        for cb in self.checkboxes_right:
-            checkbox_grid_right.addWidget(cb, row, col)
-            col += 1
-            if col >= 2:
-                col = 0
-                row += 1    
-    
-        grid.addLayout(checkbox_grid_left, 9, 0)
-        grid.addLayout(checkbox_grid_right, 9, 2)
+        grid.addLayout(move_layout, 9, 1)
 
         # Настройка растягивания колонок
         grid.setColumnStretch(0, 3)
@@ -172,6 +175,7 @@ class MoveMixin:
             self.move_right_btn.clicked.connect(lambda: QMessageBox.warning(self, "Нет доступа", "У вас нет прав на перемещение техники."))
         else:
             self.move_right_btn.clicked.connect(self.move_device_between_users)
+
 
         
     def move_device_between_users(self):

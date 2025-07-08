@@ -8,6 +8,7 @@ from PyQt6.QtCore import Qt, QSettings
 from db import get_db_connection
 from datetime import datetime, timedelta
 from sqlcipher3 import dbapi2 as sqlite3
+
 class MoveMixin:
     def load_users(self, combobox, show_disabled_cb):
         combobox.clear()
@@ -99,24 +100,44 @@ class MoveMixin:
                 col = 0
                 row += 1    
 
-        grid.addLayout(checkbox_grid_left, 10, 0)
-        grid.addLayout(checkbox_grid_right, 10, 2)
-
-
-        # === Загрузка пользователей ===
-        self.load_users(self.fio_input, self.show_disabled_left_cb)
-        self.load_users(self.fio_output, self.show_disabled_right_cb)
-
-        # === Списки устройств ===
+        # --- Поисковые поля и списки устройств ---
+        self.search_left = QLineEdit()
+        self.search_left.setPlaceholderText("Поиск техники...")
+        grid.addWidget(self.search_left, 9, 0)
         self.list_left = QListWidget()
-        self.list_right = QListWidget()
         self.list_left.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
-        self.list_right.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.list_left.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.list_right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        grid.addWidget(self.list_left, 9, 0)
-        grid.addWidget(self.list_right, 9, 2)
+        grid.addWidget(self.list_left, 10, 0)
 
+        # --- Список выделенных слева ---
+        self.selected_list_left = QListWidget()
+        self.selected_list_left.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.selected_list_left.setFixedHeight(140)
+        self.selected_list_left.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        grid.addWidget(self.selected_list_left, 11, 0)
+        self.selected_list_left.itemClicked.connect(lambda item: self._remove_selected_item('left', item))
+
+        self.search_right = QLineEdit()
+        self.search_right.setPlaceholderText("Поиск техники...")
+        grid.addWidget(self.search_right, 9, 2)
+        self.list_right = QListWidget()
+        self.list_right.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self.list_right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        grid.addWidget(self.list_right, 10, 2)
+
+        # --- Список выделенных справа ---
+        self.selected_list_right = QListWidget()
+        self.selected_list_right.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.selected_list_right.setFixedHeight(140)
+        self.selected_list_right.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        grid.addWidget(self.selected_list_right, 11, 2)
+        self.selected_list_right.itemClicked.connect(lambda item: self._remove_selected_item('right', item))
+
+        # Чекбоксы под списками
+        grid.addLayout(checkbox_grid_left, 12, 0)
+        grid.addLayout(checkbox_grid_right, 12, 2)
+
+        # --- Стили выделения для списков ---
         highlight_style = """
         QListWidget::item:selected {
             background-color: #0078d7;
@@ -127,28 +148,9 @@ class MoveMixin:
         self.list_left.setStyleSheet(highlight_style)
         self.list_right.setStyleSheet(highlight_style)
 
-        # --- Восстановление значений из QSettings (после создания списков) ---
-        settings = QSettings('CKR', 'CMDB')
-        fio_in = settings.value('move/fio_input', '')
-        fio_out = settings.value('move/fio_output', '')
-        if fio_in and self.fio_input.findText(fio_in) != -1:
-            self.fio_input.setCurrentText(fio_in)
-        elif fio_in:
-            self.fio_input.addItem(fio_in)
-            self.fio_input.setCurrentText(fio_in)
-        if fio_out and self.fio_output.findText(fio_out) != -1:
-            self.fio_output.setCurrentText(fio_out)
-        elif fio_out:
-            self.fio_output.addItem(fio_out)
-            self.fio_output.setCurrentText(fio_out)
-        # После восстановления — обновить списки устройств
-        self.update_device_list(self.fio_input, self.list_left)
-        self.update_device_list(self.fio_output, self.list_right)
-
-        # === № обращения ===
-        grid.addWidget(QLabel("№ обращения"), 3, 0)
-        self.request_input = QLineEdit()
-        grid.addWidget(self.request_input, 4, 0)
+        # === Загрузка пользователей ===
+        self.load_users(self.fio_input, self.show_disabled_left_cb)
+        self.load_users(self.fio_output, self.show_disabled_right_cb)
 
         # === Тип движения ===
         grid.addWidget(QLabel("Тип движения"), 5, 0)
@@ -161,6 +163,11 @@ class MoveMixin:
         self.comment_input = QTextEdit()
         self.comment_input.setFixedHeight(60)
         grid.addWidget(self.comment_input, 8, 0)
+
+        # === № обращения ===
+        grid.addWidget(QLabel("№ обращения"), 3, 0)
+        self.request_input = QLineEdit()
+        grid.addWidget(self.request_input, 4, 0)
 
         # === Кнопка перемещения ===
         move_layout = QVBoxLayout()
@@ -206,108 +213,89 @@ class MoveMixin:
         self.fio_input.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/fio_input', self.fio_input.currentText()))
         self.fio_output.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/fio_output', self.fio_output.currentText()))
 
+        # --- Подключаем фильтрацию ---
+        self.search_left.textChanged.connect(lambda text: self.filter_device_list('left', text))
+        self.search_right.textChanged.connect(lambda text: self.filter_device_list('right', text))
+
         # После создания всех виджетов — восстановить состояние формы, если нужно
         if hasattr(self, 'restore_move_form_state'):
             self.restore_move_form_state()
 
-    def move_device_between_users(self):
-        selected_items = self.list_left.selectedItems()
+        self.selected_left_ids = set()
+        self.selected_right_ids = set()
+        self.list_left.itemSelectionChanged.connect(self._update_selected_left)
+        self.list_right.itemSelectionChanged.connect(self._update_selected_right)
 
+    def move_device_between_users(self):
+        # Используем только объекты из нижней таблицы (selected_left_ids)
+        selected_ids = list(self.selected_left_ids)
         if not self.fio_input.currentText().strip():
             QMessageBox.warning(self, "Ошибка", "Не выбран отправитель (слева).")
             return
-
         if not self.fio_output.currentText().strip():
             QMessageBox.warning(self, "Ошибка", "Не выбран получатель (справа).")
             return
-
-        if not selected_items:
-            QMessageBox.information(self, "Внимание", "Не выбрана техника для перемещения.")
+        if not selected_ids:
+            QMessageBox.information(self, "Внимание", "Не выбрана техника для перемещения (выделите объекты в нижней таблице).")
             return
-
-        # Проверка на пустоту поля № обращения и комментария
         if not self.request_input.text().strip() or not self.comment_input.toPlainText().strip():
             QMessageBox.warning(self, "Ошибка", "Поля '№ обращения' и 'Комментарий' не могут быть пустыми.")
             return
-
-        # Проверка: нельзя передавать технику самому себе
         if self.fio_input.currentText().strip() == self.fio_output.currentText().strip():
             QMessageBox.warning(self, "Ошибка", "Нельзя передавать технику самому себе!")
             return
-
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-
-            # Получаем ID пользователей (от кого -> кому)
             cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (self.fio_input.currentText(),))
             from_user_id = cursor.fetchone()
             cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (self.fio_output.currentText(),))
             to_user_id = cursor.fetchone()
-
             if not from_user_id or not to_user_id:
                 QMessageBox.critical(self, "Ошибка", "Не удалось получить ID пользователей.")
                 return
-
             from_id = from_user_id[0]
             to_id = to_user_id[0]
-
             now = datetime.now()
             now_str = now.strftime("%Y-%m-%d %H:%M:%S")
             user_name = self.current_user
             ticket = self.request_input.text()
             action_type = self.combo_move_type.currentText()
             comment = self.comment_input.toPlainText()
-
-            for selected_item in selected_items:
-                original_device_data = selected_item.data(Qt.ItemDataRole.UserRole)
-
-                cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ? AND assigned_to = ?", (original_device_data, from_id))
+            for full_device_data in selected_ids:
+                cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ? AND assigned_to = ?", (full_device_data, from_id))
                 device_id_row = cursor.fetchone()
-
                 if not device_id_row:
-                    print(f"Техника '{original_device_data}' не найдена.")
+                    print(f"Техника '{full_device_data}' не найдена.")
                     continue
-
                 device_id = device_id_row[0]
-
-                # Обновляем владельца в Table_Devices
                 cursor.execute("UPDATE Table_Devices SET assigned_to = ? WHERE old_id = ?", (to_id, device_id))
-
-                # Получаем следующий old_id для истории
                 cursor.execute("SELECT old_id FROM History")
                 rows = cursor.fetchall()
-
                 valid_ids = []
                 for row in rows:
                     try:
                         valid_ids.append(int(row[0]))
                     except (TypeError, ValueError):
                         continue
-
                 next_old_id = max(valid_ids) + 1 if valid_ids else 1
-
-                # Добавляем запись в History
                 cursor.execute("""
                     INSERT INTO History (
                         old_id, date, type_of_action, who_add_to_db,
                         tech_move, where_moved, from_moved, ticket, description
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (next_old_id, now_str, action_type, user_name, device_id, to_id, from_id, ticket, comment))
-
-                # Обновляем интерфейс
-                visible_text = selected_item.text()
-                self.list_right.addItem(visible_text)
-                self.list_left.takeItem(self.list_left.row(selected_item))
-
             conn.commit()
             QMessageBox.information(self, "Успешно", "Техника успешно перемещена.")
             if hasattr(self, 'last_move_form_data'):
                 del self.last_move_form_data
-
+            # После перемещения очищаем выделение
+            self.selected_left_ids.clear()
+            self._refresh_selected_list('left')
+            self.update_device_list(self.fio_input, self.list_left)
+            self.update_device_list(self.fio_output, self.list_right)
         except sqlite3.Error as e:
             QMessageBox.critical(self, "Ошибка базы данных", f"Ошибка при перемещении техники:\n{str(e)}")
-
         finally:
             try:
                 cursor.close()
@@ -396,51 +384,93 @@ class MoveMixin:
             list_widget.clear()
             list_widget.setFont(QFont("Courier New", 10))
 
-            # 7) Фиксированная ширина «весь список» в символах,
-            #    чтобы все скобки начинались в одной колонке
+            # 7) Сохраняем полный список для фильтрации
+            device_items = []
             target_line_width = 97
-
             for device_id, full_device_data, status, condition, was_recently_moved in devices:
                 if not full_device_data:
                     continue
-
-                # 7.1) Формируем основной текст статуса: "status, condition"
                 status_parts = []
                 if status:
                     status_parts.append(status)
                 if condition:
                     status_parts.append(condition)
                 status_str = ", ".join(status_parts)
-
-                # 7.2) Добавляем один символ под часы: либо "⌚", либо пробел
-                clock_placeholder = "⌚" if was_recently_moved else " "  # один символ
+                clock_placeholder = "⌚" if was_recently_moved else " "
                 if status_str:
-                    # если статус не пустой, то перед «placeholder» вставляем пробел
                     status_with_clock = f"{status_str} {clock_placeholder}"
                 else:
-                    # если вообще нет статуса/condition, показываем только placeholder
                     status_with_clock = f"{clock_placeholder}"
-
-                # 7.3) Оборачиваем всё в квадратные скобки
-                status_bracketed = f"{status_with_clock}"  # например: "[эксплуатация, исправно ⌚]"
-
-                # 7.4) Считаем, сколько пробелов добавить между full_device_data и статусом
+                status_bracketed = f"{status_with_clock}"
                 spaces_needed = target_line_width - len(full_device_data) - len(status_bracketed)
-                spaces_needed = max(spaces_needed, 1)  # минимум один пробел
-
-                # 7.5) Собираем итоговую «выравненную» строку
+                spaces_needed = max(spaces_needed, 1)
                 padded_line = f"{full_device_data}{' ' * spaces_needed}{status_bracketed}"
+                device_items.append((padded_line, full_device_data))
 
-                # 7.6) Создаём QListWidgetItem и сохраняем «чистое» имя техники в UserRole
+            # Сохраняем список для фильтрации
+            if list_widget == self.list_left:
+                self.all_devices_left = device_items
+                self.all_devices_left_full = device_items.copy()
+            elif list_widget == self.list_right:
+                self.all_devices_right = device_items
+                self.all_devices_right_full = device_items.copy()
+
+            # Показываем все устройства (без фильтра)
+            for padded_line, full_device_data in device_items:
                 item = QListWidgetItem(padded_line)
                 item.setData(Qt.ItemDataRole.UserRole, full_device_data)
                 list_widget.addItem(item)
+            # Восстанавливаем выделение после обновления списка
+            if list_widget == self.list_left:
+                selected_ids = self.selected_left_ids
+            else:
+                selected_ids = self.selected_right_ids
+            first_selected_item = None
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) in selected_ids:
+                    item.setSelected(True)
+                    if first_selected_item is None:
+                        first_selected_item = item
+            if first_selected_item:
+                list_widget.setCurrentItem(first_selected_item)
 
             cursor.close()
             conn.close()
 
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке техники: {e}")
+
+    def filter_device_list(self, side, text):
+        """
+        Фильтрует список устройств по введённому тексту (поиск по всей строке, без учёта регистра)
+        side: 'left' или 'right'
+        text: строка поиска
+        """
+        if side == 'left':
+            list_widget = self.list_left
+            all_devices = getattr(self, 'all_devices_left_full', getattr(self, 'all_devices_left', []))
+            selected_ids = self.selected_left_ids
+        else:
+            list_widget = self.list_right
+            all_devices = getattr(self, 'all_devices_right_full', getattr(self, 'all_devices_right', []))
+            selected_ids = self.selected_right_ids
+        list_widget.blockSignals(True)
+        list_widget.clear()
+        text_lower = text.lower()
+        first_selected_item = None
+        for padded_line, full_device_data in all_devices:
+            if not text_lower or text_lower in padded_line.lower() or text_lower in full_device_data.lower():
+                item = QListWidgetItem(padded_line)
+                item.setData(Qt.ItemDataRole.UserRole, full_device_data)
+                list_widget.addItem(item)
+                if full_device_data in selected_ids:
+                    item.setSelected(True)
+                    if first_selected_item is None:
+                        first_selected_item = item
+        if first_selected_item:
+            list_widget.setCurrentItem(first_selected_item)
+        list_widget.blockSignals(False)
 
     def save_move_form_state(self):
         self.last_move_form_data = {
@@ -465,4 +495,70 @@ class MoveMixin:
             self.request_input.setText(data.get('request_input', ''))
             self.combo_move_type.setCurrentIndex(data.get('combo_move_type', 0))
             self.comment_input.setPlainText(data.get('comment_input', ''))
+
+    def _update_selected_left(self):
+        # Получаем текущее выделение
+        current_selected = set()
+        for i in range(self.list_left.count()):
+            item = self.list_left.item(i)
+            if item.isSelected():
+                current_selected.add(item.data(Qt.ItemDataRole.UserRole))
+        # Добавляем к уже выделенным
+        self.selected_left_ids |= current_selected
+        # Если пользователь снял выделение (Ctrl+клик), убираем из множества
+        visible_ids = set(item.data(Qt.ItemDataRole.UserRole) for item in self.list_left.findItems("*", Qt.MatchFlag.MatchWildcard))
+        for id_ in list(self.selected_left_ids):
+            if id_ in visible_ids and id_ not in current_selected:
+                self.selected_left_ids.remove(id_)
+        self._refresh_selected_list('left')
+
+    def _update_selected_right(self):
+        current_selected = set()
+        for i in range(self.list_right.count()):
+            item = self.list_right.item(i)
+            if item.isSelected():
+                current_selected.add(item.data(Qt.ItemDataRole.UserRole))
+        self.selected_right_ids |= current_selected
+        visible_ids = set(item.data(Qt.ItemDataRole.UserRole) for item in self.list_right.findItems("*", Qt.MatchFlag.MatchWildcard))
+        for id_ in list(self.selected_right_ids):
+            if id_ in visible_ids and id_ not in current_selected:
+                self.selected_right_ids.remove(id_)
+        self._refresh_selected_list('right')
+
+    def _refresh_selected_list(self, side):
+        if side == 'left':
+            selected_ids = self.selected_left_ids
+            all_devices = getattr(self, 'all_devices_left_full', getattr(self, 'all_devices_left', []))
+            selected_list = self.selected_list_left
+        else:
+            selected_ids = self.selected_right_ids
+            all_devices = getattr(self, 'all_devices_right_full', getattr(self, 'all_devices_right', []))
+            selected_list = self.selected_list_right
+        selected_list.clear()
+        # Показываем только уникальные выделенные объекты
+        shown = set()
+        for padded_line, full_device_data in all_devices:
+            if full_device_data in selected_ids and full_device_data not in shown:
+                item = QListWidgetItem(padded_line)
+                item.setData(Qt.ItemDataRole.UserRole, full_device_data)
+                selected_list.addItem(item)
+                shown.add(full_device_data)
+
+    def _remove_selected_item(self, side, item):
+        full_device_data = item.data(Qt.ItemDataRole.UserRole)
+        if side == 'left':
+            self.selected_left_ids.discard(full_device_data)
+            self._refresh_selected_list('left')
+            # Снимаем выделение в основной таблице
+            for i in range(self.list_left.count()):
+                it = self.list_left.item(i)
+                if it.data(Qt.ItemDataRole.UserRole) == full_device_data:
+                    it.setSelected(False)
+        else:
+            self.selected_right_ids.discard(full_device_data)
+            self._refresh_selected_list('right')
+            for i in range(self.list_right.count()):
+                it = self.list_right.item(i)
+                if it.data(Qt.ItemDataRole.UserRole) == full_device_data:
+                    it.setSelected(False)
 

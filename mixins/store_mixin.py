@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QComboBox, QCompleter,QLineEdit,
     QCheckBox, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView, QMessageBox
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings, QCoreApplication
 from db import get_db_connection
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
@@ -11,6 +11,8 @@ from datetime import datetime
 from sqlcipher3 import dbapi2 as sqlite3
 class StoreMixin:
     def store_action_func(self):
+        if hasattr(self, 'save_search_text'):
+            self.save_search_text()
         main_widget = QWidget()
         main_layout = QHBoxLayout(main_widget)
 
@@ -48,6 +50,15 @@ class StoreMixin:
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.fio_input.setCompleter(completer)
+
+        # --- Восстановление значения из QSettings ---
+        settings = QSettings('CKR', 'CMDB')
+        fio = settings.value('store/fio_input', '')
+        if fio and self.fio_input.findText(fio) != -1:
+            self.fio_input.setCurrentText(fio)
+        elif fio:
+            self.fio_input.addItem(fio)
+            self.fio_input.setCurrentText(fio)
 
         left_panel.addStretch()
 
@@ -97,24 +108,33 @@ class StoreMixin:
         self.store_table = QTableWidget()
         self.store_table.setColumnCount(4)
         self.store_table.setHorizontalHeaderLabels(["Техника", "Статус", "Состояние", "Год выпуска"])
-        self.store_table.horizontalHeader().setStretchLastSection(True)
         self.store_table.setColumnWidth(0, 500)
-        self.store_table.setSortingEnabled(True)  # Включить сортировку
         right_panel.addWidget(self.store_table)
 
         main_layout.addLayout(left_panel, 1)
         main_layout.addLayout(right_panel, 3)
 
+        main_widget.setLayout(main_layout)
         self.setCentralWidget(main_widget)
 
         self.fio_input.currentIndexChanged.connect(self.update_store_table)
+        self.search_input.textChanged.connect(self.save_store_form_state)
         for cb in self.checkboxes_store:
             cb.stateChanged.connect(self.update_store_table)
-
+            # Сохраняем состояние формы при изменении чекбокса
+            cb.stateChanged.connect(self.save_store_form_state)
         self.store_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.store_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.store_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.store_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # Теперь, когда все виджеты созданы, можно обновить таблицу
+        self.update_store_table()
+        # После создания всех виджетов восстанавливаем состояние формы (если есть)
+        if hasattr(self, 'restore_store_form_state'):
+            self.restore_store_form_state()
+        
+        # --- Автосохранение значения в QSettings ---
+        self.fio_input.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('store/fio_input', self.fio_input.currentText()))
         
     def filter_store_table(self):
         search_text = self.search_input.text().lower()
@@ -188,12 +208,14 @@ class StoreMixin:
 
             records = cursor.fetchall()
 
+            self.store_table.setSortingEnabled(False)  # Отключаем сортировку перед заполнением
             self.store_table.setRowCount(len(records))
             for row_idx, row_data in enumerate(records):
                 for col_idx, col_data in enumerate(row_data):
                     item = QTableWidgetItem(str(col_data))
                     item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                     self.store_table.setItem(row_idx, col_idx, item)
+            self.store_table.setSortingEnabled(True)  # Включаем сортировку обратно после заполнения
 
             cursor.close()
             conn.close()
@@ -389,3 +411,20 @@ class StoreMixin:
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
+
+    def save_store_form_state(self):
+        self.last_store_form_data = {
+            'fio_input': self.fio_input.currentText(),
+            'checkboxes': [cb.isChecked() for cb in self.checkboxes_store],
+            'search_input': self.search_input.text()
+        }
+
+    def restore_store_form_state(self):
+        if hasattr(self, 'last_store_form_data'):
+            data = self.last_store_form_data
+            self.fio_input.setCurrentText(data.get('fio_input', ''))
+            for cb, checked in zip(self.checkboxes_store, data.get('checkboxes', [])):
+                cb.setChecked(checked)
+            self.search_input.setText(data.get('search_input', ''))
+            # После восстановления выбранного объекта обновляем таблицу
+            self.update_store_table()

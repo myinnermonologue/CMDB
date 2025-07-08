@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QTextEdit, QLineEdit,QListWidgetItem
 )
 from PyQt6.QtGui import QFont
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings
 from db import get_db_connection
 from datetime import datetime, timedelta
 from sqlcipher3 import dbapi2 as sqlite3
@@ -39,7 +39,9 @@ class MoveMixin:
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке ФИО: {e}")
 
-    def move_action_func(self): 
+    def move_action_func(self):
+        if hasattr(self, 'save_search_text'):
+            self.save_search_text()
         main_widget = QWidget()
         main_layout = QVBoxLayout(main_widget)
 
@@ -105,29 +107,6 @@ class MoveMixin:
         self.load_users(self.fio_input, self.show_disabled_left_cb)
         self.load_users(self.fio_output, self.show_disabled_right_cb)
 
-        self.fio_input.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
-        self.fio_output.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
-
-        self.show_disabled_left_cb.stateChanged.connect(lambda: self.load_users(self.fio_input, self.show_disabled_left_cb))
-        self.show_disabled_right_cb.stateChanged.connect(lambda: self.load_users(self.fio_output, self.show_disabled_right_cb))
-
-        # === № обращения ===
-        grid.addWidget(QLabel("№ обращения"), 3, 0)
-        self.request_input = QLineEdit()
-        grid.addWidget(self.request_input, 4, 0)
-
-        # === Тип движения ===
-        grid.addWidget(QLabel("Тип движения"), 5, 0)
-        self.combo_move_type = QComboBox()
-        self.combo_move_type.addItems(["выдача", "перемещение", "на склад", "в поиск", "изменение"])
-        grid.addWidget(self.combo_move_type, 6, 0)
-
-        # === Комментарий ===
-        grid.addWidget(QLabel("Комментарий к обращению"), 7, 0)
-        self.comment_input = QTextEdit()
-        self.comment_input.setFixedHeight(60)
-        grid.addWidget(self.comment_input, 8, 0)
-
         # === Списки устройств ===
         self.list_left = QListWidget()
         self.list_right = QListWidget()
@@ -148,6 +127,41 @@ class MoveMixin:
         self.list_left.setStyleSheet(highlight_style)
         self.list_right.setStyleSheet(highlight_style)
 
+        # --- Восстановление значений из QSettings (после создания списков) ---
+        settings = QSettings('CKR', 'CMDB')
+        fio_in = settings.value('move/fio_input', '')
+        fio_out = settings.value('move/fio_output', '')
+        if fio_in and self.fio_input.findText(fio_in) != -1:
+            self.fio_input.setCurrentText(fio_in)
+        elif fio_in:
+            self.fio_input.addItem(fio_in)
+            self.fio_input.setCurrentText(fio_in)
+        if fio_out and self.fio_output.findText(fio_out) != -1:
+            self.fio_output.setCurrentText(fio_out)
+        elif fio_out:
+            self.fio_output.addItem(fio_out)
+            self.fio_output.setCurrentText(fio_out)
+        # После восстановления — обновить списки устройств
+        self.update_device_list(self.fio_input, self.list_left)
+        self.update_device_list(self.fio_output, self.list_right)
+
+        # === № обращения ===
+        grid.addWidget(QLabel("№ обращения"), 3, 0)
+        self.request_input = QLineEdit()
+        grid.addWidget(self.request_input, 4, 0)
+
+        # === Тип движения ===
+        grid.addWidget(QLabel("Тип движения"), 5, 0)
+        self.combo_move_type = QComboBox()
+        self.combo_move_type.addItems(["выдача", "перемещение", "на склад", "в поиск", "изменение"])
+        grid.addWidget(self.combo_move_type, 6, 0)
+
+        # === Комментарий ===
+        grid.addWidget(QLabel("Комментарий к обращению"), 7, 0)
+        self.comment_input = QTextEdit()
+        self.comment_input.setFixedHeight(60)
+        grid.addWidget(self.comment_input, 8, 0)
+
         # === Кнопка перемещения ===
         move_layout = QVBoxLayout()
         self.move_right_btn = QPushButton("Переместить---->>>")
@@ -166,18 +180,36 @@ class MoveMixin:
         main_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCentralWidget(main_widget)
 
-        for cb in self.checkboxes_left:
-            cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_input, self.list_left))
-        for cb in self.checkboxes_right:
-            cb.stateChanged.connect(lambda _, cb=cb: self.update_device_list(self.fio_output, self.list_right))
-
         if self.current_user_role.lower() == "auditor":
             self.move_right_btn.clicked.connect(lambda: QMessageBox.warning(self, "Нет доступа", "У вас нет прав на перемещение техники."))
         else:
             self.move_right_btn.clicked.connect(self.move_device_between_users)
 
+        # Теперь подключаем сигналы автосохранения формы
+        self.fio_input.currentIndexChanged.connect(self.save_move_form_state)
+        self.fio_output.currentIndexChanged.connect(self.save_move_form_state)
+        self.fio_input.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
+        self.fio_output.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
+        self.request_input.textChanged.connect(self.save_move_form_state)
+        self.combo_move_type.currentIndexChanged.connect(self.save_move_form_state)
+        self.comment_input.textChanged.connect(self.save_move_form_state)
+        for cb in self.checkboxes_left:
+            cb.stateChanged.connect(self.save_move_form_state)
+        for cb in self.checkboxes_right:
+            cb.stateChanged.connect(self.save_move_form_state)
+        # Connect 'Показать уволенных' checkboxes to reload user lists
+        if self.show_disabled_left_cb:
+            self.show_disabled_left_cb.stateChanged.connect(lambda: self.load_users(self.fio_input, self.show_disabled_left_cb))
+        if self.show_disabled_right_cb:
+            self.show_disabled_right_cb.stateChanged.connect(lambda: self.load_users(self.fio_output, self.show_disabled_right_cb))
+        # --- Автосохранение значений в QSettings ---
+        self.fio_input.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/fio_input', self.fio_input.currentText()))
+        self.fio_output.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/fio_output', self.fio_output.currentText()))
 
-        
+        # После создания всех виджетов — восстановить состояние формы, если нужно
+        if hasattr(self, 'restore_move_form_state'):
+            self.restore_move_form_state()
+
     def move_device_between_users(self):
         selected_items = self.list_left.selectedItems()
 
@@ -198,6 +230,11 @@ class MoveMixin:
             QMessageBox.warning(self, "Ошибка", "Поля '№ обращения' и 'Комментарий' не могут быть пустыми.")
             return
 
+        # Проверка: нельзя передавать технику самому себе
+        if self.fio_input.currentText().strip() == self.fio_output.currentText().strip():
+            QMessageBox.warning(self, "Ошибка", "Нельзя передавать технику самому себе!")
+            return
+
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
@@ -216,7 +253,7 @@ class MoveMixin:
             to_id = to_user_id[0]
 
             now = datetime.now()
-            now_str = now.strftime("%d.%m.%Y %H:%M:%S")
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
             user_name = self.current_user
             ticket = self.request_input.text()
             action_type = self.combo_move_type.currentText()
@@ -265,6 +302,8 @@ class MoveMixin:
 
             conn.commit()
             QMessageBox.information(self, "Успешно", "Техника успешно перемещена.")
+            if hasattr(self, 'last_move_form_data'):
+                del self.last_move_form_data
 
         except sqlite3.Error as e:
             QMessageBox.critical(self, "Ошибка базы данных", f"Ошибка при перемещении техники:\n{str(e)}")
@@ -402,4 +441,28 @@ class MoveMixin:
 
         except sqlite3.Error as e:
             print(f"Ошибка при загрузке техники: {e}")
+
+    def save_move_form_state(self):
+        self.last_move_form_data = {
+            'fio_input': self.fio_input.currentText(),
+            'fio_output': self.fio_output.currentText(),
+            'checkboxes_left': [cb.isChecked() for cb in self.checkboxes_left],
+            'checkboxes_right': [cb.isChecked() for cb in self.checkboxes_right],
+            'request_input': self.request_input.text(),
+            'combo_move_type': self.combo_move_type.currentIndex(),
+            'comment_input': self.comment_input.toPlainText()
+        }
+
+    def restore_move_form_state(self):
+        if hasattr(self, 'last_move_form_data'):
+            data = self.last_move_form_data
+            self.fio_input.setCurrentText(data.get('fio_input', ''))
+            self.fio_output.setCurrentText(data.get('fio_output', ''))
+            for cb, checked in zip(self.checkboxes_left, data.get('checkboxes_left', [])):
+                cb.setChecked(checked)
+            for cb, checked in zip(self.checkboxes_right, data.get('checkboxes_right', [])):
+                cb.setChecked(checked)
+            self.request_input.setText(data.get('request_input', ''))
+            self.combo_move_type.setCurrentIndex(data.get('combo_move_type', 0))
+            self.comment_input.setPlainText(data.get('comment_input', ''))
 

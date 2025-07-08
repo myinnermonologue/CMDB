@@ -12,6 +12,7 @@ from mixins.edit_dialog_mixin import EditDialogMixin
 import os # для получения имени пользователя
 from openpyxl import Workbook, load_workbook
 from db import get_db_connection
+
 class MainWindow(
     QMainWindow,
     ToolbarMixin,
@@ -23,7 +24,6 @@ class MainWindow(
     EditDialogMixin
 ):
     def __init__(self):
-
         super().__init__()
         self.setWindowIcon(QIcon("ico.ico"))
         self.setWindowTitle("CSC_CMDB")
@@ -37,6 +37,7 @@ class MainWindow(
         self.total_records = 0
         self.current_query = ""
         self.current_table_name = ""
+        self.last_search_text = ""
         # -----------------------   ----
         if domain.upper() != "PC_NEAKTUALNO" and domain.upper() != "CSCENTR" and domain.upper() != "DESKTOP-FCQOV2G":
             QMessageBox.critical(None, "Ошибка доступа", f"Недопустимый домен: {domain}")
@@ -53,12 +54,9 @@ class MainWindow(
             "Добро пожаловать",
             f"Добро пожаловать, {self.current_user_full_name}!\nВаша роль: {self.current_user_role}"
         ))
-        # Центральный виджет и основной layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         self.layout = QVBoxLayout(central_widget)
-
-        # Инициализация тулбара
         self.setup_toolbar()
         QTimer.singleShot(300, self.check_disabled_users_devices)
         self.sync_ckr_users_from_excel
@@ -244,3 +242,6 @@ class MainWindow(
                 conn.close()
             except:
                 pass
+
+    def show_store(self):
+        self.setCentralWidget(self.store_widget)

@@ -33,7 +33,7 @@ class EmployeeMixin:
             "Отдел 5": "unit5",
             "Должность": "position",
             "Город": "city",
-            "Адрес": "address",  # ← добавлено
+            "Адрес": "address",
             "Статус": "status",
             "Руководитель": "supervisor",
             "Email": "email"
@@ -44,15 +44,25 @@ class EmployeeMixin:
 
         for i, label_text in enumerate(fields):
             label = QLabel(label_text)
-            line_edit = QLineEdit()
-            self.employee_fields[label_text] = line_edit
-            form_layout.addWidget(label, i + 1, 0)
-            form_layout.addWidget(line_edit, i + 1, 1)
+            if label_text == "Статус":
+                combo = QComboBox()
+                combo.addItems(["Enabled", "Disabled"])
+                self.employee_fields[label_text] = combo
+                form_layout.addWidget(label, i + 1, 0)
+                form_layout.addWidget(combo, i + 1, 1)
+                combo.currentIndexChanged.connect(self.save_employee_form_state)
+            else:
+                line_edit = QLineEdit()
+                self.employee_fields[label_text] = line_edit
+                form_layout.addWidget(label, i + 1, 0)
+                form_layout.addWidget(line_edit, i + 1, 1)
+                line_edit.textChanged.connect(self.save_employee_form_state)
 
         form_layout.addWidget(QLabel("Комментарий"), len(fields) + 1, 0)
         self.employee_comment = QTextEdit()
         self.employee_comment.setFixedHeight(50)
         form_layout.addWidget(self.employee_comment, len(fields) + 1, 1)
+        self.employee_comment.textChanged.connect(self.save_employee_form_state)
 
         self.btn_save_employee = QPushButton("Сохранить изменения")
         form_layout.addWidget(self.btn_save_employee, len(fields) + 2, 1)
@@ -89,25 +99,72 @@ class EmployeeMixin:
         main_layout.addLayout(right_layout, 0, 1)
 
         self.setCentralWidget(main_widget)
-        self.combo_fio_employee.currentIndexChanged.connect(self.load_employee_data)
+        self.combo_fio_employee.currentIndexChanged.connect(self.on_employee_changed)
 
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT DISTINCT full_name_tabel FROM CKR_users ORDER BY full_name_tabel ASC")
             users = [row[0] for row in cursor.fetchall() if row[0]]
+            self.combo_fio_employee.blockSignals(True)
+            self.combo_fio_employee.clear()
             self.combo_fio_employee.addItem("")
             self.combo_fio_employee.addItems(users)
-
+            # --- Восстановление выбранного пользователя из автосохранённого состояния ---
+            saved_fio = None
+            if hasattr(self, 'last_employee_form_data'):
+                saved_fio = self.last_employee_form_data.get('combo_fio_employee', '')
+            if saved_fio and self.combo_fio_employee.findText(saved_fio) != -1:
+                self.combo_fio_employee.setCurrentText(saved_fio)
+            elif saved_fio:
+                self.combo_fio_employee.addItem(saved_fio)
+                self.combo_fio_employee.setCurrentText(saved_fio)
+            self.combo_fio_employee.blockSignals(False)
             completer = QCompleter(users)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             completer.setFilterMode(Qt.MatchFlag.MatchContains)
             self.combo_fio_employee.setCompleter(completer)
             cursor.close()
             conn.close()
-
         except Exception as e:
             print(f"Ошибка при загрузке сотрудников: {e}")
+
+        # --- Восстановление автосохранённых данных, если выбранный сотрудник не изменился ---
+        current_fio = self.combo_fio_employee.currentText()
+        if hasattr(self, 'last_employee_form_data') and \
+           self.last_employee_form_data.get('combo_fio_employee', '') == current_fio:
+            self.restore_employee_form_state()
+            self.reload_employee_tables()
+        else:
+            self.load_employee_data()
+
+    def save_employee_form_state(self):
+        # Для статуса сохраняем currentText, для остальных поля .text()
+        fields_data = {}
+        for k, v in self.employee_fields.items():
+            if k == "Статус":
+                fields_data[k] = v.currentText()
+            else:
+                fields_data[k] = v.text()
+        self.last_employee_form_data = {
+            'combo_fio_employee': self.combo_fio_employee.currentText(),
+            'fields': fields_data,
+            'comment': self.employee_comment.toPlainText()
+        }
+
+    def restore_employee_form_state(self):
+        if hasattr(self, 'last_employee_form_data'):
+            data = self.last_employee_form_data
+            self.combo_fio_employee.setCurrentText(data.get('combo_fio_employee', ''))
+            for k, v in data.get('fields', {}).items():
+                if k in self.employee_fields:
+                    if k == "Статус":
+                        idx = self.employee_fields[k].findText(v)
+                        if idx != -1:
+                            self.employee_fields[k].setCurrentIndex(idx)
+                    else:
+                        self.employee_fields[k].setText(v)
+            self.employee_comment.setPlainText(data.get('comment', ''))
 
     def save_employee_data(self):
         full_name = self.combo_fio_employee.currentText().strip()
@@ -123,10 +180,12 @@ class EmployeeMixin:
             tabel_num = str(tabel_num) if tabel_num else ""
             new_full_name = f"{last_name} {first_name} {patronymic} ({tabel_num})".strip()
 
-            values = {
-                self.label_to_column[label]: self.employee_fields[label].text().strip()
-                for label in self.employee_fields
-            }
+            values = {}
+            for label in self.employee_fields:
+                if label == "Статус":
+                    values[self.label_to_column[label]] = self.employee_fields[label].currentText()
+                else:
+                    values[self.label_to_column[label]] = self.employee_fields[label].text().strip()
             values.update({
                 "description": self.employee_comment.toPlainText().strip(),
                 "full_name_tabel": new_full_name
@@ -171,9 +230,16 @@ class EmployeeMixin:
             self.combo_fio_employee.clear()
             self.combo_fio_employee.addItem("")
             self.combo_fio_employee.addItems(users)
-            self.combo_fio_employee.setCurrentText(new_full_name)
+            # --- Восстановление выбранного пользователя из автосохранённого состояния ---
+            saved_fio = None
+            if hasattr(self, 'last_employee_form_data'):
+                saved_fio = self.last_employee_form_data.get('combo_fio_employee', '')
+            if saved_fio and self.combo_fio_employee.findText(saved_fio) != -1:
+                self.combo_fio_employee.setCurrentText(saved_fio)
+            elif saved_fio:
+                self.combo_fio_employee.addItem(saved_fio)
+                self.combo_fio_employee.setCurrentText(saved_fio)
             self.combo_fio_employee.blockSignals(False)
-
             completer = QCompleter(users)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             completer.setFilterMode(Qt.MatchFlag.MatchContains)
@@ -218,6 +284,8 @@ class EmployeeMixin:
             cursor.close()
             conn.close()
             QMessageBox.information(self, "Успешно", "Данные сотрудника и история изменений успешно обновлены.")
+            if hasattr(self, 'last_employee_form_data'):
+                del self.last_employee_form_data
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить данные: {str(e)}")
 
@@ -276,7 +344,10 @@ class EmployeeMixin:
         full_name = self.combo_fio_employee.currentText().strip()
         if not full_name:
             for field in self.employee_fields.values():
-                field.clear()
+                if isinstance(field, QComboBox):
+                    field.setCurrentIndex(0)
+                else:
+                    field.clear()
             self.employee_comment.clear()
             return
 
@@ -298,13 +369,20 @@ class EmployeeMixin:
                 keys = list(self.employee_fields.keys())
                 for i, key in enumerate(keys):
                     if i < len(row):
-                        self.employee_fields[key].setText(str(row[i]) if row[i] else "")
-
+                        if key == "Статус":
+                            idx = self.employee_fields[key].findText(str(row[i]) if row[i] else "Enabled")
+                            if idx != -1:
+                                self.employee_fields[key].setCurrentIndex(idx)
+                        else:
+                            self.employee_fields[key].setText(str(row[i]) if row[i] else "")
                 # Комментарий
                 self.employee_comment.setPlainText(str(row[-1]) if row[-1] else "")
             else:
                 for field in self.employee_fields.values():
-                    field.clear()
+                    if isinstance(field, QComboBox):
+                        field.setCurrentIndex(0)
+                    else:
+                        field.clear()
                 self.employee_comment.clear()
                     # === Загрузка выданных активов ===
             # Получаем old_id до закрытия курсора
@@ -352,3 +430,63 @@ class EmployeeMixin:
 
         except Exception as e:
             print(f"Ошибка при загрузке данных сотрудника: {e}")
+
+    def on_employee_changed(self):
+        # Сбрасываем автосохранённые данные только если выбран новый сотрудник
+        current_fio = self.combo_fio_employee.currentText()
+        if hasattr(self, 'last_employee_form_data') and \
+           self.last_employee_form_data.get('combo_fio_employee', '') != current_fio:
+            del self.last_employee_form_data
+        self.load_employee_data()
+
+    def reload_employee_tables(self):
+        full_name = self.combo_fio_employee.currentText().strip()
+        if not full_name:
+            self.issued_assets_text.clear()
+            self.employee_history_table.setRowCount(0)
+            return
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (full_name,))
+            user_id_row = cursor.fetchone()
+            if user_id_row:
+                user_id = user_id_row[0]
+                # --- Выданные активы ---
+                cursor.execute("""
+                    SELECT full_device_data 
+                    FROM Table_Devices 
+                    WHERE assigned_to = ? AND full_device_data IS NOT NULL
+                    ORDER BY full_device_data
+                """, (user_id,))
+                assets = [row[0] for row in cursor.fetchall() if row[0]]
+                self.issued_assets_text.setPlainText("\n".join(assets) if assets else "Нет выданных активов.")
+
+                # --- История из таблицы History ---
+                cursor.execute("""
+                    SELECT date, type_of_action, tech_move, ticket, description
+                    FROM History
+                    WHERE where_moved = ?
+                    ORDER BY date DESC
+                """, (user_id,))
+                history_rows = cursor.fetchall()
+
+                cursor.execute("SELECT old_id, full_device_data FROM Table_Devices")
+                device_map = {int(row[0]): row[1] for row in cursor.fetchall() if row[1]}
+
+                self.employee_history_table.setRowCount(len(history_rows))
+                for row_idx, (date, action, tech_id, ticket, desc) in enumerate(history_rows):
+                    tech_name = device_map.get(int(tech_id), "—") if tech_id is not None else "—"
+                    self.employee_history_table.setItem(row_idx, 0, QTableWidgetItem(str(date)))
+                    self.employee_history_table.setItem(row_idx, 1, QTableWidgetItem(str(action)))
+                    self.employee_history_table.setItem(row_idx, 2, QTableWidgetItem(tech_name))
+                    self.employee_history_table.setItem(row_idx, 3, QTableWidgetItem(str(ticket)))
+                    self.employee_history_table.setItem(row_idx, 4, QTableWidgetItem(str(desc)))
+            else:
+                self.issued_assets_text.clear()
+                self.employee_history_table.setRowCount(0)
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"Ошибка при подгрузке таблиц сотрудника: {e}")

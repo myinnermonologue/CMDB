@@ -47,19 +47,16 @@ class ToolbarMixin:
         add_action.triggered.connect(self.add_action_func)
         add_tech_types_action.triggered.connect(self.add_tech_type_func)
 
+        # Добавляем основные действия
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
         toolbar.addAction(employee_action)
-        toolbar.addAction(add_action)
-        toolbar.addAction(add_tech_types_action)
-        toolbar.addAction(tech_assets_action)
-        toolbar.addAction(tech_types_db_action)
-        toolbar.addAction(history_action)
-        toolbar.addAction(history_user_action)
-        toolbar.addAction(it_users_action)
-        toolbar.addAction(ckr_users_action)
-        
+
+        # Только для Admin показываем создание техники и типов
+        if hasattr(self, "current_user_role") and self.current_user_role and self.current_user_role.lower() == "admin":
+            toolbar.addAction(add_action)
+            toolbar.addAction(add_tech_types_action)
 
         # Список ограниченных кнопок
         restricted_actions = [
@@ -98,10 +95,28 @@ class ToolbarMixin:
         self.inv_input = QLineEdit()
         self.year_input = QLineEdit()
         self.ship_input = QLineEdit()
-        self.supplier_input = QLineEdit()
+        self.supplier_input = QComboBox()
+        self.supplier_input.setEditable(True)
+        supplier_items = ["ООО \"ЦКР\"", "АО \"Джет\"", "ПАО НЛМК", "ПАО ПГК"]
+        self.supplier_input.addItems(supplier_items)
+        supplier_completer = QCompleter(supplier_items)
+        supplier_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        supplier_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        supplier_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.supplier_input.setCompleter(supplier_completer)
+
+        self.owner_input = QComboBox()
+        self.owner_input.setEditable(True)
+        owner_items = ["ООО \"ЦКР\"", "АО \"Джет\"", "ПАО НЛМК", "ПАО ПГК"]
+        self.owner_input.addItems(owner_items)
+        owner_completer = QCompleter(owner_items)
+        owner_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        owner_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        owner_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.owner_input.setCompleter(owner_completer)
+
         self.date_input = QDateTimeEdit()
         self.price_input = QLineEdit()
-        self.owner_input = QLineEdit()
         self.comment_input = QTextEdit()
 
         self.condition_input.addItems(["исправно", "не исправно"])
@@ -111,15 +126,17 @@ class ToolbarMixin:
         self.date_input.setDateTime(QDateTime.currentDateTime())
 
         def set_combobox_searchable(combo: QComboBox, items: list[str]):
+            # Сохраняем первый элемент, если он пустой
+            was_empty = combo.count() > 0 and combo.itemText(0) == ""
             combo.clear()
+            combo.addItem("")  # Всегда добавляем пустой первым
             combo.addItems(items)
-            completer = QCompleter(items)
+            completer = QCompleter([""] + items)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             completer.setFilterMode(Qt.MatchFlag.MatchContains)
             completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
             combo.setCompleter(completer)
-            # Убрано: combo.lineEdit().setReadOnly(True)
-            # Теперь можно вводить произвольный текст
+            combo.setCurrentIndex(0)  # Всегда выбираем пустой
 
         # === Загрузка ФИО ===
         try:
@@ -187,17 +204,6 @@ class ToolbarMixin:
 
         self.setCentralWidget(main_widget)
         
-        def set_combobox_searchable(combo: QComboBox, items: list[str]):
-            combo.clear()
-            combo.addItems(items)
-            combo.setEditable(True)
-            completer = QCompleter(items)
-            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-            completer.setFilterMode(Qt.MatchFlag.MatchContains)
-            completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
-            combo.setCompleter(completer)
-            
-        
         set_combobox_searchable(self.type_input, types)
         set_combobox_searchable(self.subtype_input, subtypes)
         set_combobox_searchable(self.brand_input, brands)
@@ -219,9 +225,9 @@ class ToolbarMixin:
                 self.inv_input.text().strip(),
                 self.year_input.text().strip(),
                 self.ship_input.text().strip(),
-                self.supplier_input.text().strip(),
+                self.supplier_input.currentText().strip(),
                 self.price_input.text().strip(),
-                self.owner_input.text().strip()
+                self.owner_input.currentText().strip()
             ]
             if any(not val for val in fields):
                 QMessageBox.warning(self, "Ошибка", "Заполните все обязательные поля!")
@@ -285,8 +291,8 @@ class ToolbarMixin:
             """, (
                 new_id, new_old_id, assigned_to, serial_number, condition, status,
                 self.inv_input.text().strip(), self.year_input.text().strip(), self.ship_input.text().strip(),
-                self.supplier_input.text().strip(), date_supply, self.price_input.text().strip(),
-                self.owner_input.text().strip(), self.comment_input.toPlainText().strip(), full_name, device_type_id, 'Да'
+                self.supplier_input.currentText().strip(), date_supply, self.price_input.text().strip(),
+                self.owner_input.currentText().strip(), self.comment_input.toPlainText().strip(), full_name, device_type_id, 'Да'
             ))
 
             # Запись в историю

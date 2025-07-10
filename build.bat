@@ -1,0 +1,1 @@
+pyinstaller --onefile --windowed --icon=icon.ico --add-data ".env;." --add-data "qt.conf;." --add-data "sqlcipher3_wheels-0.5.4.post0-cp310-cp310-win_amd64.whl;." --add-data "icon.ico;." main.py

@@ -11,7 +11,7 @@ from PyQt6.QtGui import QIcon
 from mixins.edit_dialog_mixin import EditDialogMixin
 import os # для получения имени пользователя
 from openpyxl import Workbook, load_workbook
-from db import get_db_connection
+from db import get_db_connection, get_db_filename
 
 class MainWindow(
     QMainWindow,
@@ -39,16 +39,20 @@ class MainWindow(
         self.current_table_name = ""
         self.last_search_text = ""
         # -----------------------   ----
-        if domain.upper() != "PC_NEAKTUALNO" and domain.upper() != "CSCENTR" and domain.upper() != "DESKTOP-FCQOV2G":
-            QMessageBox.critical(None, "Ошибка доступа", f"Недопустимый домен: {domain}")
-            sys.exit()
-
-        # Проверка пользователя в БД
-        if not self.is_user_in_db(self.current_user):
-            QMessageBox.critical(None, "Ошибка доступа", f"Пользователь {self.current_user} не найден в системе.")
-            QMessageBox.critical(None, "Ошибка доступа", f"{domain}, {username} не имеет доступа к системе.")
-            sys.exit()
-            
+        db_file = get_db_filename()
+        is_test_db = db_file == "test_cmdb.db"
+        if not is_test_db:
+            if domain.upper() != "PC_NEAKTUALNO" and domain.upper() != "CSCENTR" and domain.upper() != "DESKTOP-FCQOV2G":
+                QMessageBox.critical(None, "Ошибка доступа", f"Недопустимый домен: {domain}")
+                sys.exit()
+            # Проверка пользователя в БД
+            if not self.is_user_in_db(self.current_user):
+                QMessageBox.critical(None, "Ошибка доступа", f"Пользователь {self.current_user} не найден в системе.")
+                QMessageBox.critical(None, "Ошибка доступа", f"{domain}, {username} не имеет доступа к системе.")
+                sys.exit()
+        else:
+            self.current_user_full_name = "Тестовый Админ"
+            self.current_user_role = "admin"
         QTimer.singleShot(100, lambda: QMessageBox.information(
             None,  # <-- центр экрана
             "Добро пожаловать",

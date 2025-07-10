@@ -10,7 +10,7 @@ zoom_convert.py
 c/
 *.txt
 *.mdb
-*.db
+Database_CMDB.db
 # C extensions
 *.so
 # Excel

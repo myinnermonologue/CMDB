@@ -1,5 +1,5 @@
 import os
-from pysqlcipher3 import dbapi2 as sqlite
+from sqlcipher3 import dbapi2 as sqlcipher3
 import csv
 from dotenv import load_dotenv
 
@@ -10,7 +10,7 @@ load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
 
 # Подключение к зашифрованной базе
-conn = sqlite.connect(DB_NAME)
+conn = sqlcipher3.connect(DB_NAME)
 cursor = conn.cursor()
 
 # Установка ключа и параметров шифрования
@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS Table_Devices (
     characteristics TEXT,
     project TEXT,
     visible TEXT,
-    reserve TEXT
+    reserve TEXT,
+    sn_on_box TEXT,
+    sn_on_device TEXT
 );
 ''')
 
@@ -57,8 +59,8 @@ with open(TXT_FILE, "r", encoding="cp1251") as file:
                 date_of_supply, owner_of_device, assigned_to, status,
                 condition, inv_number, supplier, price, ship_number,
                 full_device_data, description, characteristics,
-                project, visible, reserve
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                project, visible, reserve, sn_on_box, sn_on_device
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         ''', (
             row[0].strip('"'),
             row[1].strip('"'),
@@ -78,7 +80,9 @@ with open(TXT_FILE, "r", encoding="cp1251") as file:
             row[15].strip('"'),
             row[16].strip('"'),
             row[17].strip('"'),
-            row[18].strip('"')
+            row[18].strip('"'),
+            row[19].strip('"') if len(row) > 19 else '',
+            row[20].strip('"') if len(row) > 20 else ''
         ))
 
 # Завершение

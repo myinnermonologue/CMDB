@@ -1,5 +1,5 @@
 import os
-from pysqlcipher3 import dbapi2 as sqlite
+from sqlcipher3 import dbapi2 as sqlcipher3
 import csv
 from dotenv import load_dotenv
 DB_NAME = "Database_CMDB.db"
@@ -8,7 +8,7 @@ load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
 
 # Создание зашифрованной базы
-conn = sqlite.connect(DB_NAME)
+conn = sqlcipher3.connect(DB_NAME)
 cursor = conn.cursor()
 
 # Настройка шифрования

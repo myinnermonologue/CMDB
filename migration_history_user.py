@@ -1,5 +1,5 @@
 import os
-from pysqlcipher3 import dbapi2 as sqlite
+from sqlcipher3 import dbapi2 as sqlcipher3
 import csv
 from dotenv import load_dotenv
 
@@ -10,7 +10,7 @@ load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
 
 # Подключение к зашифрованной базе
-conn = sqlite.connect(DB_NAME)
+conn = sqlcipher3.connect(DB_NAME)
 cursor = conn.cursor()
 
 # Установка ключа и параметров шифрования

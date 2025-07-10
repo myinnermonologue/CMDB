@@ -1,9 +1,15 @@
-import sys
 import os
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
+# os.environ["QT_SCALE_FACTOR"] = "1"  # если хотите всегда 100%
+
+import sys
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QIcon
 from main_window import MainWindow
 from PyQt6.QtCore import QSettings
+import shutil
+import sqlite3
+from PyQt6.QtCore import Qt
 
 def resource_path(relative_path):
     try:
@@ -12,10 +18,23 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def get_db_connection():
+    db_file = "Database_CMDB.db"
+    test_db_file = "test_cmdb.db"
+    if not os.path.exists(db_file):
+        # Если нет основной базы, копируем тестовую
+        if os.path.exists(test_db_file):
+            shutil.copyfile(test_db_file, db_file)
+        else:
+            raise FileNotFoundError("Нет ни основной базы, ни тестовой test_cmdb.db!")
+    # Открываем как обычную SQLite-базу
+    conn = sqlite3.connect(db_file)
+    return conn
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    icon_path = resource_path("icon.ico")
-    app.setWindowIcon(QIcon(icon_path))
+    # icon_path = resource_path("icon.ico")
+    # app.setWindowIcon(QIcon(icon_path))
 
     # --- Очистка QSettings при выходе из приложения ---
     def clear_store_settings():
@@ -27,7 +46,7 @@ if __name__ == "__main__":
     app.aboutToQuit.connect(clear_store_settings)
 
     window = MainWindow()
-    window.setWindowIcon(QIcon(icon_path))
+    # window.setWindowIcon(QIcon(icon_path))
     screen = QApplication.primaryScreen().availableGeometry()
     print(screen.width(), screen.height())
     window.setMinimumSize(int(screen.width() * 0.7), int(screen.height() * 0.7))

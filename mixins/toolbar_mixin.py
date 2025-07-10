@@ -126,7 +126,7 @@ class ToolbarMixin:
         self.date_input.setDateTime(QDateTime.currentDateTime())
 
         def set_combobox_searchable(combo: QComboBox, items: list[str]):
-            # Сохраняем первый элемент, если он пустой
+            combo.setEditable(True)  # Гарантируем, что combobox редактируемый
             was_empty = combo.count() > 0 and combo.itemText(0) == ""
             combo.clear()
             combo.addItem("")  # Всегда добавляем пустой первым

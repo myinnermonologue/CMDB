@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel, QComboBox, QCompleter,
     QCheckBox, QPushButton, QAbstractItemView, QMessageBox,QSizePolicy,
-    QListWidget, QTextEdit, QLineEdit,QListWidgetItem
+    QListWidget, QTextEdit, QLineEdit,QListWidgetItem, QGroupBox, QVBoxLayout, QScrollArea
 )
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt, QSettings
@@ -73,8 +73,10 @@ class MoveMixin:
         grid.addWidget(self.fio_output, 1, 2)
 
         # === Чекбоксы ===
-        checkbox_grid_left = QGridLayout()
-        checkbox_grid_right = QGridLayout()
+        checkbox_widget_left = QWidget()
+        checkbox_layout_left = QVBoxLayout(checkbox_widget_left)
+        checkbox_widget_right = QWidget()
+        checkbox_layout_right = QVBoxLayout(checkbox_widget_right)
         options = [
             "Хранение", "Перемещение", "Поиск", "Резерв",
             "Исправно", "Не исправно", "Ремонт", "На списание",
@@ -86,29 +88,31 @@ class MoveMixin:
         self.show_disabled_left_cb = None
         self.show_disabled_right_cb = None
 
-        row, col = 0, 0
         for opt in options:
             cb = QCheckBox(opt)
             if opt == "Показать уволенных":
                 self.show_disabled_left_cb = cb
             self.checkboxes_left.append(cb)
-            checkbox_grid_left.addWidget(cb, row, col)
-            col += 1
-            if col >= 2:
-                col = 0
-                row += 1
+            checkbox_layout_left.addWidget(cb)
+        checkbox_layout_left.setContentsMargins(5, 5, 5, 5)
+        checkbox_layout_left.setSpacing(4)
+        scroll_area_left = QScrollArea()
+        scroll_area_left.setWidgetResizable(True)
+        scroll_area_left.setWidget(checkbox_widget_left)
+        scroll_area_left.setMaximumHeight(200)
 
-        row, col = 0, 0
         for opt in options:
             cb = QCheckBox(opt)
             if opt == "Показать уволенных":
                 self.show_disabled_right_cb = cb
             self.checkboxes_right.append(cb)
-            checkbox_grid_right.addWidget(cb, row, col)
-            col += 1
-            if col >= 2:
-                col = 0
-                row += 1    
+            checkbox_layout_right.addWidget(cb)
+        checkbox_layout_right.setContentsMargins(5, 5, 5, 5)
+        checkbox_layout_right.setSpacing(4)
+        scroll_area_right = QScrollArea()
+        scroll_area_right.setWidgetResizable(True)
+        scroll_area_right.setWidget(checkbox_widget_right)
+        scroll_area_right.setMaximumHeight(200)
 
         # --- Поисковые поля и списки устройств ---
         self.search_left = QLineEdit()
@@ -144,8 +148,8 @@ class MoveMixin:
         self.selected_list_right.itemClicked.connect(lambda item: self._remove_selected_item('right', item))
 
         # Чекбоксы под списками
-        grid.addLayout(checkbox_grid_left, 12, 0)
-        grid.addLayout(checkbox_grid_right, 12, 2)
+        grid.addWidget(scroll_area_left, 12, 0)
+        grid.addWidget(scroll_area_right, 12, 2)
 
         # --- Стили выделения для списков ---
         highlight_style = """

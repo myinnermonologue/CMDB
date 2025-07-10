@@ -9,6 +9,16 @@ from db import get_db_connection
 from datetime import datetime, timedelta
 from sqlcipher3 import dbapi2 as sqlite3
 
+STATUS_START_COL = 70  # статус и состояние всегда с 70-й позиции
+
+def make_padded_line(full_device_data, status_str):
+    name = str(full_device_data)
+    if len(name) >= STATUS_START_COL:
+        return f"{name} {status_str}"
+    else:
+        spaces = ' ' * (STATUS_START_COL - len(name))
+        return f"{name}{spaces}{status_str}"
+
 class MoveMixin:
     def load_users(self, combobox, show_disabled_cb):
         combobox.clear()
@@ -204,6 +214,10 @@ class MoveMixin:
             cb.stateChanged.connect(self.save_move_form_state)
         for cb in self.checkboxes_right:
             cb.stateChanged.connect(self.save_move_form_state)
+        for cb in self.checkboxes_left:
+            cb.stateChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
+        for cb in self.checkboxes_right:
+            cb.stateChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
         # Connect 'Показать уволенных' checkboxes to reload user lists
         if self.show_disabled_left_cb:
             self.show_disabled_left_cb.stateChanged.connect(lambda: self.load_users(self.fio_input, self.show_disabled_left_cb))
@@ -327,7 +341,6 @@ class MoveMixin:
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            # 1) Определяем идентификатор выбранного пользователя
             cursor.execute(
                 "SELECT old_id FROM CKR_users WHERE full_name_tabel = ?",
                 (selected_full_name,)
@@ -337,7 +350,39 @@ class MoveMixin:
                 return
             user_old_id = result[0]
 
-            # 2) Собираем список статусов из чекбоксов
+            # --- Новый блок: получаем полный список устройств пользователя (без фильтрации чекбоксами) ---
+            # Для выравнивания: всегда добавляем clock_placeholder (⌚ или пробел)
+            cursor.execute(
+                "SELECT d.old_id, d.full_device_data, d.status, d.condition, CASE WHEN h.tech_move IS NOT NULL THEN 1 ELSE 0 END as was_moved_recently "
+                "FROM Table_Devices d "
+                "LEFT JOIN (SELECT DISTINCT tech_move FROM History WHERE date >= ?) h ON d.old_id = h.tech_move "
+                "WHERE d.assigned_to = ?",
+                ((datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S"), user_old_id)
+            )
+            all_devices_unfiltered = []
+            target_line_width = 97
+            for device_id, full_device_data, status, condition, was_recently_moved in cursor.fetchall():
+                if not full_device_data:
+                    continue
+                status_parts = []
+                if status:
+                    status_parts.append(status)
+                if condition:
+                    status_parts.append(condition)
+                status_str = ", ".join(status_parts)
+                clock_placeholder = "⌚" if was_recently_moved else " "
+                if status_str:
+                    status_with_clock = f"{status_str} {clock_placeholder}"
+                else:
+                    status_with_clock = f"{clock_placeholder}"
+                padded_line = make_padded_line(full_device_data, status_with_clock)
+                all_devices_unfiltered.append((padded_line, full_device_data, status, condition))
+            if list_widget == self.list_left:
+                self.all_devices_left_unfiltered = all_devices_unfiltered
+            elif list_widget == self.list_right:
+                self.all_devices_right_unfiltered = all_devices_unfiltered
+            # --- Конец нового блока ---
+
             checkboxes = self.checkboxes_left if fio_combobox == self.fio_input else self.checkboxes_right
             selected_statuses = [
                 checkbox_to_db_status[cb.text()]
@@ -345,11 +390,8 @@ class MoveMixin:
                 if cb.isChecked() and cb.text() in checkbox_to_db_status
             ]
 
-            # 3) Граница «24 часа назад» для фильтрации History
             time_24_hours_ago = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
 
-            # 4) Базовый SQL-запрос с JOIN на History, чтобы сразу узнать, 
-            #    была ли техника перемещена в последние 24 ч (was_moved_recently = 1)
             base_query = """
                 SELECT 
                     d.old_id,
@@ -370,21 +412,29 @@ class MoveMixin:
             """
             params = [time_24_hours_ago, user_old_id]
 
-            # 5) Если есть галочки-фильтры по статусам/condition, добавляем их в WHERE
             if selected_statuses:
                 placeholders = ','.join(['?'] * len(selected_statuses))
                 base_query += f" AND (d.status IN ({placeholders}) OR d.condition IN ({placeholders}))"
-                # каждый выбранный статус идёт дважды (для status и для condition)
                 params.extend(selected_statuses + selected_statuses)
 
             cursor.execute(base_query, params)
-            devices = cursor.fetchall()  # [(old_id, full_device_data, status, condition, was_flag), …]
+            devices = cursor.fetchall()
 
-            # 6) Очистка и установка шрифта QListWidget
+            # --- Отключаем сигнал itemSelectionChanged ---
+            if list_widget == self.list_left:
+                try:
+                    self.list_left.itemSelectionChanged.disconnect(self._update_selected_left)
+                except Exception:
+                    pass
+            elif list_widget == self.list_right:
+                try:
+                    self.list_right.itemSelectionChanged.disconnect(self._update_selected_right)
+                except Exception:
+                    pass
+
             list_widget.clear()
             list_widget.setFont(QFont("Courier New", 10))
 
-            # 7) Сохраняем полный список для фильтрации
             device_items = []
             target_line_width = 97
             for device_id, full_device_data, status, condition, was_recently_moved in devices:
@@ -401,13 +451,9 @@ class MoveMixin:
                     status_with_clock = f"{status_str} {clock_placeholder}"
                 else:
                     status_with_clock = f"{clock_placeholder}"
-                status_bracketed = f"{status_with_clock}"
-                spaces_needed = target_line_width - len(full_device_data) - len(status_bracketed)
-                spaces_needed = max(spaces_needed, 1)
-                padded_line = f"{full_device_data}{' ' * spaces_needed}{status_bracketed}"
+                padded_line = make_padded_line(full_device_data, status_with_clock)
                 device_items.append((padded_line, full_device_data))
 
-            # Сохраняем список для фильтрации
             if list_widget == self.list_left:
                 self.all_devices_left = device_items
                 self.all_devices_left_full = device_items.copy()
@@ -415,25 +461,21 @@ class MoveMixin:
                 self.all_devices_right = device_items
                 self.all_devices_right_full = device_items.copy()
 
-            # Показываем все устройства (без фильтра)
+            # --- Вручную выставляем выделение для видимых, не меняя selected_left_ids/selected_right_ids ---
             for padded_line, full_device_data in device_items:
                 item = QListWidgetItem(padded_line)
                 item.setData(Qt.ItemDataRole.UserRole, full_device_data)
                 list_widget.addItem(item)
-            # Восстанавливаем выделение после обновления списка
-            if list_widget == self.list_left:
-                selected_ids = self.selected_left_ids
-            else:
-                selected_ids = self.selected_right_ids
-            first_selected_item = None
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) in selected_ids:
+                if list_widget == self.list_left and full_device_data in self.selected_left_ids:
                     item.setSelected(True)
-                    if first_selected_item is None:
-                        first_selected_item = item
-            if first_selected_item:
-                list_widget.setCurrentItem(first_selected_item)
+                elif list_widget == self.list_right and full_device_data in self.selected_right_ids:
+                    item.setSelected(True)
+
+            # --- Включаем сигнал обратно ---
+            if list_widget == self.list_left:
+                self.list_left.itemSelectionChanged.connect(self._update_selected_left)
+            elif list_widget == self.list_right:
+                self.list_right.itemSelectionChanged.connect(self._update_selected_right)
 
             cursor.close()
             conn.close()
@@ -497,7 +539,7 @@ class MoveMixin:
             self.comment_input.setPlainText(data.get('comment_input', ''))
 
     def _update_selected_left(self):
-        # Получаем текущее выделение
+        # Получаем текущее выделение только из видимых
         current_selected = set()
         for i in range(self.list_left.count()):
             item = self.list_left.item(i)
@@ -505,8 +547,8 @@ class MoveMixin:
                 current_selected.add(item.data(Qt.ItemDataRole.UserRole))
         # Добавляем к уже выделенным
         self.selected_left_ids |= current_selected
-        # Если пользователь снял выделение (Ctrl+клик), убираем из множества
-        visible_ids = set(item.data(Qt.ItemDataRole.UserRole) for item in self.list_left.findItems("*", Qt.MatchFlag.MatchWildcard))
+        # Удаляем из выделения только те, которые видимы и явно сняты пользователем
+        visible_ids = set(item.data(Qt.ItemDataRole.UserRole) for item in [self.list_left.item(i) for i in range(self.list_left.count())])
         for id_ in list(self.selected_left_ids):
             if id_ in visible_ids and id_ not in current_selected:
                 self.selected_left_ids.remove(id_)
@@ -519,7 +561,7 @@ class MoveMixin:
             if item.isSelected():
                 current_selected.add(item.data(Qt.ItemDataRole.UserRole))
         self.selected_right_ids |= current_selected
-        visible_ids = set(item.data(Qt.ItemDataRole.UserRole) for item in self.list_right.findItems("*", Qt.MatchFlag.MatchWildcard))
+        visible_ids = set(item.data(Qt.ItemDataRole.UserRole) for item in [self.list_right.item(i) for i in range(self.list_right.count())])
         for id_ in list(self.selected_right_ids):
             if id_ in visible_ids and id_ not in current_selected:
                 self.selected_right_ids.remove(id_)
@@ -528,17 +570,25 @@ class MoveMixin:
     def _refresh_selected_list(self, side):
         if side == 'left':
             selected_ids = self.selected_left_ids
-            all_devices = getattr(self, 'all_devices_left_full', getattr(self, 'all_devices_left', []))
+            all_devices_full = getattr(self, 'all_devices_left_unfiltered', [])
             selected_list = self.selected_list_left
         else:
             selected_ids = self.selected_right_ids
-            all_devices = getattr(self, 'all_devices_right_full', getattr(self, 'all_devices_right', []))
+            all_devices_full = getattr(self, 'all_devices_right_unfiltered', [])
             selected_list = self.selected_list_right
         selected_list.clear()
-        # Показываем только уникальные выделенные объекты
         shown = set()
-        for padded_line, full_device_data in all_devices:
-            if full_device_data in selected_ids and full_device_data not in shown:
+        # Создаём отображение: full_device_data -> padded_line
+        device_map = {full_device_data: padded_line for padded_line, full_device_data, status, condition in all_devices_full}
+        target_line_width = 97
+        for full_device_data in selected_ids:
+            if full_device_data not in shown:
+                if full_device_data in device_map:
+                    padded_line = device_map[full_device_data]
+                else:
+                    # Если устройства нет в списке, делаем строку вручную с пробелом для выравнивания
+                    status_bracketed = " "
+                    padded_line = make_padded_line(full_device_data, status_bracketed)
                 item = QListWidgetItem(padded_line)
                 item.setData(Qt.ItemDataRole.UserRole, full_device_data)
                 selected_list.addItem(item)

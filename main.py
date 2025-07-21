@@ -9,7 +9,7 @@ from main_window import MainWindow
 from PyQt6.QtCore import QSettings
 import shutil
 import sqlite3
-from PyQt6.QtCore import Qt
+from sync import main as sync_main  # Синхронизация данных из Excel
 
 def resource_path(relative_path):
     try:
@@ -32,6 +32,8 @@ def get_db_connection():
     return conn
 
 if __name__ == "__main__":
+    # Синхронизация данных из Excel перед запуском приложения
+    sync_main()
     app = QApplication(sys.argv)
     # icon_path = resource_path("icon.ico")
     # app.setWindowIcon(QIcon(icon_path))

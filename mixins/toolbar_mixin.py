@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QToolBar, QWidget, QFormLayout, QComboBox, QLineEdit, QTextEdit, QDateTimeEdit,
-    QPushButton, QMessageBox, QCompleter,QSpinBox,QApplication,QLabel
+    QPushButton, QMessageBox, QCompleter,QSpinBox,QApplication,QLabel, QSizePolicy
 )
 from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt, QDateTime
@@ -60,6 +60,9 @@ class ToolbarMixin:
             toolbar.addAction(add_action)
             toolbar.addAction(add_tech_types_action)
             
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
         toolbar.addWidget(author)
       
         # Список ограниченных кнопок

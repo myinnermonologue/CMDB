@@ -211,6 +211,8 @@ class MoveMixin:
         self.fio_output.currentIndexChanged.connect(self.save_move_form_state)
         self.fio_input.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_input, self.list_left))
         self.fio_output.currentIndexChanged.connect(lambda: self.update_device_list(self.fio_output, self.list_right))
+        self.fio_input.currentIndexChanged.connect(self._clear_both_selected)
+        self.fio_output.currentIndexChanged.connect(self._clear_both_selected)
         self.request_input.textChanged.connect(self.save_move_form_state)
         self.combo_move_type.currentIndexChanged.connect(self.save_move_form_state)
         self.comment_input.textChanged.connect(self.save_move_form_state)
@@ -615,4 +617,13 @@ class MoveMixin:
                 it = self.list_right.item(i)
                 if it.data(Qt.ItemDataRole.UserRole) == full_device_data:
                     it.setSelected(False)
+
+    def _clear_both_selected(self):
+        """Очищает обе нижние таблицы и все связанные выделения при смене сотрудника/склада."""
+        self.selected_left_ids.clear()
+        self.selected_right_ids.clear()
+        self.selected_list_left.clear()
+        self.selected_list_right.clear()
+        self.list_left.clearSelection()
+        self.list_right.clearSelection()
 

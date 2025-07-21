@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QToolBar, QWidget, QFormLayout, QComboBox, QLineEdit, QTextEdit, QDateTimeEdit,
-    QPushButton, QMessageBox, QCompleter,QSpinBox,QApplication
+    QPushButton, QMessageBox, QCompleter,QSpinBox,QApplication,QLabel
 )
 from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt, QDateTime
@@ -33,6 +33,7 @@ class ToolbarMixin:
         history_user_action = QAction("Ист. польз.", self)
         it_users_action = QAction("Сотруд. ИТ", self)
         ckr_users_action = QAction("Пользователи", self)
+        author = QLabel("Автор: myinnermonologue")
 
         tech_types_db_action.triggered.connect(lambda: self.show_db_func(arr_tech_types, query_tech_types))
         tech_assets_action.triggered.connect(lambda: self.show_db_func(arr_assets, query_assets))
@@ -51,13 +52,16 @@ class ToolbarMixin:
         toolbar.addAction(move_action)
         toolbar.addAction(store_action)
         toolbar.addAction(tech_action)
-        toolbar.addAction(employee_action)
+        toolbar.addAction(employee_action) 
+        
 
         # Только для Admin показываем создание техники и типов
         if hasattr(self, "current_user_role") and self.current_user_role and self.current_user_role.lower() == "admin":
             toolbar.addAction(add_action)
             toolbar.addAction(add_tech_types_action)
-
+            
+        toolbar.addWidget(author)
+      
         # Список ограниченных кнопок
         restricted_actions = [
             tech_types_db_action,

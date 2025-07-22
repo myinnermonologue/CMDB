@@ -1,27 +1,51 @@
+import pyodbc
 import os
 from sqlcipher3 import dbapi2 as sqlcipher3
-import csv
 from dotenv import load_dotenv
 
-DB_NAME = "Database_CMDB.db"
-TXT_FILE = "Tab_Sobitie.txt"
+MDB_FILE = r'C:\Users\neaktualno\Desktop\CKR_Proj\Work\CMDB_Proj\CMDB\Asset_IT2.mdb'
+PASSWORD = '37543754'
+TABLE_NAME = 'Tab_Sobitie'
+SQLITE_DB = 'Database_CMDB.db'
 
+print('Подключение к Access...')
+conn_str = (
+    r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+    f'DBQ={MDB_FILE};'
+    f'PWD={PASSWORD};'
+)
+
+access_conn = pyodbc.connect(conn_str)
+access_cursor = access_conn.cursor()
+print('Выполнение запроса к Access...')
+query = f'''
+SELECT
+    id AS old_id,
+    data AS [date],
+    tip AS type_of_action,
+    sotIT AS who_add_to_db,
+    teh AS tech_move,
+    kuda AS where_moved,
+    otkuda AS from_moved,
+    osnovanie AS ticket,
+    prim AS description
+FROM {TABLE_NAME}
+'''
+
+access_cursor.execute(query)
+rows = access_cursor.fetchall()
+columns = [column[0] for column in access_cursor.description]
+print(f'Получено строк из Access: {len(rows)}')
+
+print('Подключение к SQLite...')
 load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
+sqlite_conn = sqlcipher3.connect(SQLITE_DB)
+sqlite_cursor = sqlite_conn.cursor()
+sqlite_cursor.execute(f"PRAGMA key='{CIP}';")
 
-# Подключение к зашифрованной базе
-conn = sqlcipher3.connect(DB_NAME)
-cursor = conn.cursor()
-
-# Установка ключа и параметров шифрования
-cursor.execute(f"PRAGMA key='{CIP}';")
-cursor.execute("PRAGMA cipher_page_size = 4096")
-cursor.execute("PRAGMA kdf_iter = 256000")
-cursor.execute("PRAGMA cipher_hmac_algorithm = HMAC_SHA512")
-cursor.execute("PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512")
-
-# Создание таблицы, если не существует
-cursor.execute('''
+print('Создание таблицы History, если не существует...')
+sqlite_cursor.execute('''
 CREATE TABLE IF NOT EXISTS History (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     old_id INT,
@@ -36,31 +60,29 @@ CREATE TABLE IF NOT EXISTS History (
 );
 ''')
 
-# Чтение и вставка данных из 3.txt
-with open(TXT_FILE, "r", encoding="cp1251") as file:
-    reader = csv.reader(file, delimiter=";")
-    for row in reader:
+print('Импорт данных...')
+for i, row in enumerate(rows, 1):
+    record = dict(zip(columns, row))
+    sqlite_cursor.execute("SELECT id FROM History WHERE old_id = ?", (record["old_id"],))
+    existing = sqlite_cursor.fetchone()
+    if existing:
+        set_clause = ", ".join([f"{col} = ?" for col in columns if col != "old_id"])
+        values = [record[col] for col in columns if col != "old_id"] + [record["old_id"]]
+        sql = f"UPDATE History SET {set_clause} WHERE old_id = ?"
+        sqlite_cursor.execute(sql, values)
+        print(f'[{i}/{len(rows)}] Обновлено old_id={record["old_id"]}')
+    else:
+        insert_cols = ", ".join(columns)
+        placeholders = ", ".join(["?" for _ in columns])
+        values = [record[col] for col in columns]
+        sql = f"INSERT INTO History ({insert_cols}) VALUES ({placeholders})"
+        sqlite_cursor.execute(sql, values)
+        print(f'[{i}/{len(rows)}] Добавлено old_id={record["old_id"]}')
 
+sqlite_conn.commit()
+sqlite_cursor.close()
+sqlite_conn.close()
+access_cursor.close()
+access_conn.close()
 
-        cursor.execute('''
-            INSERT INTO History (
-                old_id, date, type_of_action, who_add_to_db,
-                tech_move, where_moved, from_moved, ticket, description
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-        ''', (
-            int(row[0]) if row[0].isdigit() else None,
-            row[1].strip('"'),
-            row[2].strip('"'),
-            row[3].strip('"'),
-            int(row[4]) if row[4].isdigit() else None,
-            int(row[5]) if row[5].isdigit() else None,
-            int(row[6]) if row[6].isdigit() else None,
-            row[7].strip('"'),
-            row[8].strip('"')
-        ))
-
-# Завершение
-conn.commit()
-conn.close()
-
-print(f"Данные из '{TXT_FILE}' успешно добавлены в таблицу 'History'.")
+print(f"Импорт из Access ({TABLE_NAME}) в History завершён. Всего обработано: {len(rows)} записей.")

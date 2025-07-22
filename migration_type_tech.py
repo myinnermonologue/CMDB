@@ -1,25 +1,52 @@
+import pyodbc
 import os
 from sqlcipher3 import dbapi2 as sqlcipher3
-import csv
 from dotenv import load_dotenv
-DB_NAME = "Database_CMDB.db"
-TXT_FILE = "dll_Tip.txt"
+
+MDB_FILE = r'C:\Users\neaktualno\Desktop\CKR_Proj\Work\CMDB_Proj\CMDB\Asset_IT2.mdb'
+PASSWORD = '37543754'
+TABLE_NAME = 'dll_Tip'
+SQLITE_DB = 'Database_CMDB.db'
+
+print('Подключение к Access...')
+conn_str = (
+    r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+    f'DBQ={MDB_FILE};'
+    f'PWD={PASSWORD};'
+)
+
+access_conn = pyodbc.connect(conn_str)
+access_cursor = access_conn.cursor()
+print('Выполнение запроса к Access...')
+query = f'''
+SELECT
+    id AS old_id,
+    tip AS type_tech,
+    podTip AS additional_type,
+    zavod AS brand,
+    model,
+    kategoriy AS category,
+    serNumb,
+    typeC,
+    srokSlugbi AS service_amount,
+    visible
+FROM {TABLE_NAME}
+'''
+
+access_cursor.execute(query)
+rows = access_cursor.fetchall()
+columns = [column[0] for column in access_cursor.description]
+print(f'Получено строк из Access: {len(rows)}')
+
+print('Подключение к SQLite...')
 load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
+sqlite_conn = sqlcipher3.connect(SQLITE_DB)
+sqlite_cursor = sqlite_conn.cursor()
+sqlite_cursor.execute(f"PRAGMA key='{CIP}';")
 
-# Создание зашифрованной базы
-conn = sqlcipher3.connect(DB_NAME)
-cursor = conn.cursor()
-
-# Настройка шифрования
-cursor.execute(f"PRAGMA key='{CIP}';")
-cursor.execute("PRAGMA cipher_page_size = 4096")
-cursor.execute("PRAGMA kdf_iter = 256000")
-cursor.execute("PRAGMA cipher_hmac_algorithm = HMAC_SHA512")
-cursor.execute("PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512")
-
-# Создание таблицы
-cursor.execute('''
+print('Создание таблицы tech_types, если не существует...')
+sqlite_cursor.execute('''
 CREATE TABLE IF NOT EXISTS tech_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     old_id INTEGER,
@@ -35,30 +62,29 @@ CREATE TABLE IF NOT EXISTS tech_types (
 );
 ''')
 
-# Чтение txt и вставка данных
-with open(TXT_FILE, "r", encoding="cp1251") as file:
-    reader = csv.reader(file, delimiter=";")
-    for row in reader:
-        cursor.execute('''
-            INSERT INTO tech_types (
-                old_id, type_tech, additional_type, brand, model,
-                category, serNumb, typeC, service_amount, visible
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        ''', (
-            int(row[0]) if row[0].isdigit() else None,
-            row[1].strip('"'),
-            row[2].strip('"'),
-            row[3].strip('"'),
-            row[4].strip('"'),
-            row[5].strip('"'),
-            row[6].strip('"'),
-            row[7].strip('"'),
-            int(row[8]) if row[8].isdigit() else 0,
-            row[9].strip('"')
-        ))
+print('Импорт данных...')
+for i, row in enumerate(rows, 1):
+    record = dict(zip(columns, row))
+    sqlite_cursor.execute("SELECT id FROM tech_types WHERE old_id = ?", (record["old_id"],))
+    existing = sqlite_cursor.fetchone()
+    if existing:
+        set_clause = ", ".join([f"{col} = ?" for col in columns if col != "old_id"])
+        values = [record[col] for col in columns if col != "old_id"] + [record["old_id"]]
+        sql = f"UPDATE tech_types SET {set_clause} WHERE old_id = ?"
+        sqlite_cursor.execute(sql, values)
+        print(f'[{i}/{len(rows)}] Обновлено old_id={record["old_id"]}')
+    else:
+        insert_cols = ", ".join(columns)
+        placeholders = ", ".join(["?" for _ in columns])
+        values = [record[col] for col in columns]
+        sql = f"INSERT INTO tech_types ({insert_cols}) VALUES ({placeholders})"
+        sqlite_cursor.execute(sql, values)
+        print(f'[{i}/{len(rows)}] Добавлено old_id={record["old_id"]}')
 
-# Завершение
-conn.commit()
-conn.close()
+sqlite_conn.commit()
+sqlite_cursor.close()
+sqlite_conn.close()
+access_cursor.close()
+access_conn.close()
 
-print(f"База данных '{DB_NAME}' успешно создана и зашифрована.")
+print(f"Импорт из Access ({TABLE_NAME}) в tech_types завершён. Всего обработано: {len(rows)} записей.")

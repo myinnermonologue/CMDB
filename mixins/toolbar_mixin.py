@@ -175,10 +175,10 @@ class ToolbarMixin:
             conn.close()
 
         # Уникальные значения для списков
-        types = sorted(set(t["type"] for t in self.tech_types))
-        subtypes = sorted(set(t["subtype"] for t in self.tech_types))
-        brands = sorted(set(t["brand"] for t in self.tech_types))
-        models = sorted(set(t["model"] for t in self.tech_types))
+        types = sorted(set(t["type"] for t in self.tech_types if t["type"] is not None))
+        subtypes = sorted(set(t["subtype"] for t in self.tech_types if t["subtype"] is not None))
+        brands = sorted(set(t["brand"] for t in self.tech_types if t["brand"] is not None))
+        models = sorted(set(t["model"] for t in self.tech_types if t["model"] is not None))
 
         self.type_input.addItems(types)
         self.subtype_input.addItems(subtypes)

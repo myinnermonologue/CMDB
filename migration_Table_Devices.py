@@ -1,27 +1,61 @@
+import pyodbc
 import os
 from sqlcipher3 import dbapi2 as sqlcipher3
-import csv
 from dotenv import load_dotenv
 
-DB_NAME = "Database_CMDB.db"
-TXT_FILE = "Tab_Tehnik.txt"
+MDB_FILE = r'C:\Users\neaktualno\Desktop\CKR_Proj\Work\CMDB_Proj\CMDB\Asset_IT2.mdb'
+PASSWORD = '37543754'
+TABLE_NAME = 'Tab_Tehnik'
+SQLITE_DB = 'Database_CMDB.db'
 
+print('Подключение к Access...')
+conn_str = (
+    r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+    f'DBQ={MDB_FILE};'
+    f'PWD={PASSWORD};'
+)
+
+access_conn = pyodbc.connect(conn_str)
+access_cursor = access_conn.cursor()
+print('Выполнение запроса к Access...')
+query = f'''
+SELECT
+    id AS old_id,
+    serialNum AS serial_number,
+    tip AS device_type,
+    godVipuska AS year_of_release,
+    dataPostavki AS date_of_supply,
+    sobstvenik AS owner_of_device,
+    komuNaznachen AS assigned_to,
+    status,
+    sostoynnie AS condition,
+    inventarniy AS inv_number,
+    postavchik AS supplier,
+    stoimost AS price,
+    partNum AS ship_number,
+    itog AS full_device_data,
+    prim AS description,
+    harakteristik AS characteristics,
+    proekt AS project,
+    visible,
+    rezerv AS reserve
+FROM {TABLE_NAME}
+'''
+
+access_cursor.execute(query)
+rows = access_cursor.fetchall()
+columns = [column[0] for column in access_cursor.description]
+print(f'Получено строк из Access: {len(rows)}')
+
+print('Подключение к SQLite...')
 load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
+sqlite_conn = sqlcipher3.connect(SQLITE_DB)
+sqlite_cursor = sqlite_conn.cursor()
+sqlite_cursor.execute(f"PRAGMA key='{CIP}';")
 
-# Подключение к зашифрованной базе
-conn = sqlcipher3.connect(DB_NAME)
-cursor = conn.cursor()
-
-# Установка ключа и параметров шифрования
-cursor.execute(f"PRAGMA key='{CIP}';")
-cursor.execute("PRAGMA cipher_page_size = 4096")
-cursor.execute("PRAGMA kdf_iter = 256000")
-cursor.execute("PRAGMA cipher_hmac_algorithm = HMAC_SHA512")
-cursor.execute("PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512")
-
-# Создание таблицы, если не существует
-cursor.execute('''
+print('Создание таблицы Table_Devices, если не существует...')
+sqlite_cursor.execute('''
 CREATE TABLE IF NOT EXISTS Table_Devices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     old_id TEXT,
@@ -48,45 +82,29 @@ CREATE TABLE IF NOT EXISTS Table_Devices (
 );
 ''')
 
-# Чтение и вставка данных из 4.txt
-with open(TXT_FILE, "r", encoding="cp1251") as file:
-    reader = csv.reader(file, delimiter=";")
-    for row in reader:
+print('Импорт данных...')
+for i, row in enumerate(rows, 1):
+    record = dict(zip(columns, row))
+    sqlite_cursor.execute("SELECT id FROM Table_Devices WHERE old_id = ?", (record["old_id"],))
+    existing = sqlite_cursor.fetchone()
+    if existing:
+        set_clause = ", ".join([f"{col} = ?" for col in columns if col != "old_id"])
+        values = [record[col] for col in columns if col != "old_id"] + [record["old_id"]]
+        sql = f"UPDATE Table_Devices SET {set_clause} WHERE old_id = ?"
+        sqlite_cursor.execute(sql, values)
+        print(f'[{i}/{len(rows)}] Обновлено old_id={record["old_id"]}')
+    else:
+        insert_cols = ", ".join(columns)
+        placeholders = ", ".join(["?" for _ in columns])
+        values = [record[col] for col in columns]
+        sql = f"INSERT INTO Table_Devices ({insert_cols}) VALUES ({placeholders})"
+        sqlite_cursor.execute(sql, values)
+        print(f'[{i}/{len(rows)}] Добавлено old_id={record["old_id"]}')
 
-        cursor.execute('''
-            INSERT INTO Table_Devices (
-                old_id, serial_number, device_type, year_of_release,
-                date_of_supply, owner_of_device, assigned_to, status,
-                condition, inv_number, supplier, price, ship_number,
-                full_device_data, description, characteristics,
-                project, visible, reserve, sn_on_box, sn_on_device
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        ''', (
-            row[0].strip('"'),
-            row[1].strip('"'),
-            int(row[2]) if row[2].isdigit() else None,
-            int(row[3]) if row[3].isdigit() else None,
-            row[4].strip('"'),
-            row[5].strip('"'),
-            int(row[6]) if row[6].isdigit() else None,
-            row[7].strip('"'),
-            row[8].strip('"'),
-            row[9].strip('"'),
-            row[10].strip('"'),
-            float(row[11].replace(",", ".") if row[11] else 0) if row[11].replace(",", "").replace(".", "").isdigit() else 0,
-            row[12].strip('"'),
-            row[13].strip('"'),
-            row[14].strip('"'),
-            row[15].strip('"'),
-            row[16].strip('"'),
-            row[17].strip('"'),
-            row[18].strip('"'),
-            row[19].strip('"') if len(row) > 19 else '',
-            row[20].strip('"') if len(row) > 20 else ''
-        ))
+sqlite_conn.commit()
+sqlite_cursor.close()
+sqlite_conn.close()
+access_cursor.close()
+access_conn.close()
 
-# Завершение
-conn.commit()
-conn.close()
-
-print(f"Данные из '{TXT_FILE}' успешно добавлены в таблицу 'Table_Devices'.")
+print(f"Импорт из Access ({TABLE_NAME}) в Table_Devices завершён. Всего обработано: {len(rows)} записей.")

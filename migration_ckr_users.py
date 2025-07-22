@@ -1,27 +1,65 @@
+import pyodbc
 import os
 from sqlcipher3 import dbapi2 as sqlcipher3
-import csv
 from dotenv import load_dotenv
 
-DB_NAME = "Database_CMDB.db"
-TXT_FILE = "Tab_Sotrudnik.txt"
+MDB_FILE = r'C:\Users\neaktualno\Desktop\CKR_Proj\Work\CMDB_Proj\CMDB\Asset_IT2.mdb'
+PASSWORD = '37543754'
+TABLE_NAME = 'Tab_Sotrudnik'
+SQLITE_DB = 'Database_CMDB.db'
 
+# Строка подключения к Access
+conn_str = (
+    r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+    f'DBQ={MDB_FILE};'
+    f'PWD={PASSWORD};'
+)
+
+# Чтение из Access
+access_conn = pyodbc.connect(conn_str)
+access_cursor = access_conn.cursor()
+
+query = f'''
+SELECT
+    id AS old_id,
+    famaliy AS last_name,
+    imy AS first_name,
+    otchestvo AS patronymic,
+    companiy AS company,
+    otdel1 AS unit1,
+    otdel2 AS unit2,
+    otdel3 AS unit3,
+    otdel4 AS unit4,
+    otdel5 AS unit5,
+    otdel6 AS unit6,
+    status,
+    dolhnost AS position,
+    gorod AS city,
+    adres AS address,
+    tabNumb AS tabel_num,
+    rukovodinel AS supervisor,
+    poshta AS email,
+    komnata AS room,
+    comment AS description,
+    kategoriy AS category,
+    tipZapisi AS type_of_user,
+    itog AS full_name_tabel
+FROM {TABLE_NAME}
+'''
+
+access_cursor.execute(query)
+rows = access_cursor.fetchall()
+columns = [column[0] for column in access_cursor.description]
+
+# Подключение к SQLite (SQLCipher)
 load_dotenv()
 CIP = os.getenv("JWGEWERGJG")
+sqlite_conn = sqlcipher3.connect(SQLITE_DB)
+sqlite_cursor = sqlite_conn.cursor()
+sqlite_cursor.execute(f"PRAGMA key='{CIP}';")
 
-# Подключение к существующей зашифрованной базе
-conn = sqlcipher3.connect(DB_NAME)
-cursor = conn.cursor()
-
-# Установка ключа и параметров шифрования
-cursor.execute(f"PRAGMA key='{CIP}';")
-cursor.execute("PRAGMA cipher_page_size = 4096")
-cursor.execute("PRAGMA kdf_iter = 256000")
-cursor.execute("PRAGMA cipher_hmac_algorithm = HMAC_SHA512")
-cursor.execute("PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512")
-
-# Создание таблицы, если не существует
-cursor.execute('''
+# Создать таблицу, если не существует
+sqlite_cursor.execute('''
 CREATE TABLE IF NOT EXISTS CKR_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     old_id INTEGER,
@@ -50,46 +88,30 @@ CREATE TABLE IF NOT EXISTS CKR_users (
 );
 ''')
 
-# Чтение и вставка из 2.txt
-with open(TXT_FILE, "r", encoding="cp1251") as file:
-    reader = csv.reader(file, delimiter=";")
-    for row in reader:
+# Импорт данных
+for row in rows:
+    record = dict(zip(columns, row))
+    # Проверка на дубли по old_id
+    sqlite_cursor.execute("SELECT id FROM CKR_users WHERE old_id = ?", (record["old_id"],))
+    existing = sqlite_cursor.fetchone()
+    if existing:
+        # Обновление
+        set_clause = ", ".join([f"{col} = ?" for col in columns if col != "old_id"])
+        values = [record[col] for col in columns if col != "old_id"] + [record["old_id"]]
+        sql = f"UPDATE CKR_users SET {set_clause} WHERE old_id = ?"
+        sqlite_cursor.execute(sql, values)
+    else:
+        # Вставка
+        insert_cols = ", ".join(columns)
+        placeholders = ", ".join(["?" for _ in columns])
+        values = [record[col] for col in columns]
+        sql = f"INSERT INTO CKR_users ({insert_cols}) VALUES ({placeholders})"
+        sqlite_cursor.execute(sql, values)
 
-        cursor.execute('''
-            INSERT INTO CKR_users (
-                old_id, last_name, first_name, patronymic, company,
-                unit1, unit2, unit3, unit4, unit5, unit6, status,
-                position, city, address, tabel_num, supervisor,
-                email, room, description, category, type_of_user, full_name_tabel
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        ''', (
-            int(row[0]) if row[0].isdigit() else None,
-            row[1].strip('"'),
-            row[2].strip('"'),
-            row[3].strip('"'),
-            row[4].strip('"'),
-            row[5].strip('"'),
-            row[6].strip('"'),
-            row[7].strip('"'),
-            row[8].strip('"'),
-            row[9].strip('"'),
-            row[10].strip('"'),
-            row[11].strip('"'),
-            row[12].strip('"'),
-            row[13].strip('"'),
-            row[14].strip('"'),
-            int(row[15]) if row[15].isdigit() else None,
-            row[16].strip('"'),
-            row[17].strip('"'),
-            row[18].strip('"'),
-            row[19].strip('"'),
-            row[20].strip('"'),
-            row[21].strip('"'),
-            row[22].strip('"')
-        ))
+sqlite_conn.commit()
+sqlite_cursor.close()
+sqlite_conn.close()
+access_cursor.close()
+access_conn.close()
 
-# Завершение
-conn.commit()
-conn.close()
-
-print(f"Данные из '{TXT_FILE}' успешно добавлены в таблицу 'CKR_users'.")
+print(f"Импорт из Access ({TABLE_NAME}) в CKR_users завершён. Всего обработано: {len(rows)} записей.")

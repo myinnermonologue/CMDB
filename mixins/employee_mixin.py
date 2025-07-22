@@ -94,6 +94,7 @@ class EmployeeMixin:
         self.employee_history_table.setColumnCount(5)
         self.employee_history_table.setHorizontalHeaderLabels(["Дата", "Тип", "Техника", "Основание", "Примечание"])
         self.employee_history_table.horizontalHeader().setStretchLastSection(True)
+        self.employee_history_table.setSortingEnabled(True)
         right_layout.addWidget(self.employee_history_table)
 
         main_layout.addLayout(right_layout, 0, 1)

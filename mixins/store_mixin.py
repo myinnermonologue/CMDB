@@ -32,8 +32,7 @@ class StoreMixin:
             cursor.execute("""
                 SELECT DISTINCT full_name_tabel 
                 FROM CKR_users 
-                WHERE (first_name IS NULL OR TRIM(first_name) = '')
-                AND (last_name IS NULL OR TRIM(last_name) = '')
+                WHERE type_of_user = 'склад'
                 ORDER BY full_name_tabel ASC
             """)
             items = cursor.fetchall()

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 cip = os.getenv("JWGEWERGJG")
 EXCEL_FILE = "sync.xlsm"
-DB_FILE = "EncryptedDatabase.db"
+DB_FILE = "Database_CMDB.db"
 DB_PASSWORD = cip # пароль к базе SQLCipher
 
 # Сопоставление полей Excel с полями БД
@@ -37,7 +37,9 @@ def connect_db(db_path, password):
 
 def read_excel(file_path):
     wb = load_workbook(file_path)
-    sheet = wb.active
+    if 'dll' not in wb.sheetnames:
+        raise ValueError("Лист 'dll' не найден в файле Excel.")
+    sheet = wb['dll']
     data = []
     for row in sheet.iter_rows(min_row=2, values_only=True):  # пропускаем заголовки
         record = {}
@@ -48,18 +50,61 @@ def read_excel(file_path):
 
 def sync_data(data, conn, cursor):
     for record in data:
-        # Проверка: существует ли запись с таким табельным номером
-        cursor.execute("SELECT old_id FROM CKR_users WHERE tabel_num = ?", (record.get("tabel_num"),))
-        existing = cursor.fetchone()
+        # Новая логика для статуса
+        status_value = str(record.get("status") or "").upper()
+        if any(x in status_value for x in ["OU=USERS", "OU=PGK", "OU=NLMK", "OU=UCLH"]):
+            record["status"] = "Enabled"
+        else:
+            record["status"] = "Disabled"
+
+        # Проверка: существует ли запись с таким табельным номером, full_name_tabel или old_id
+        tabel_num = record.get("tabel_num")
+        full_name_tabel = record.get("full_name_tabel")
+        old_id = record.get("old_id")
+        existing = None
+        if tabel_num:
+            cursor.execute("SELECT old_id FROM CKR_users WHERE tabel_num = ?", (tabel_num,))
+            existing = cursor.fetchone()
+        if not existing and full_name_tabel:
+            cursor.execute("SELECT old_id FROM CKR_users WHERE full_name_tabel = ?", (full_name_tabel,))
+            existing = cursor.fetchone()
+        if not existing and old_id:
+            cursor.execute("SELECT old_id FROM CKR_users WHERE old_id = ?", (old_id,))
+            existing = cursor.fetchone()
+
+        is_store = (
+            not (record.get("first_name") or record.get("last_name") or record.get("patronymic"))
+            and record.get("address") and record.get("status") and record.get("company")
+        )
 
         if existing:
             # Обновление записи
             set_clause = ", ".join([f"{k} = ?" for k in record.keys()])
-            values = list(record.values()) + [record.get("tabel_num")]
-            sql = f"UPDATE CKR_users SET {set_clause} WHERE tabel_num = ?"
+            values = list(record.values()) + [tabel_num or full_name_tabel or old_id]
+            if tabel_num:
+                sql = f"UPDATE CKR_users SET {set_clause} WHERE tabel_num = ?"
+            elif full_name_tabel:
+                sql = f"UPDATE CKR_users SET {set_clause} WHERE full_name_tabel = ?"
+            else:
+                sql = f"UPDATE CKR_users SET {set_clause} WHERE old_id = ?"
             cursor.execute(sql, values)
         else:
             # Вставка новой записи
+            cursor.execute("SELECT MAX(CAST(old_id AS INTEGER)) FROM CKR_users")
+            max_old_id = cursor.fetchone()[0] or 0
+            new_old_id = max_old_id + 1
+            record["old_id"] = new_old_id
+            if is_store:
+                record["type_of_user"] = "склад"
+                record["full_name_tabel"] = record.get("address", "") or f"Склад {new_old_id}"
+            else:
+                record["type_of_user"] = "сот ЦКР"
+                last_name = record.get("last_name", "") or ""
+                first_name = record.get("first_name", "") or ""
+                patronymic = record.get("patronymic", "") or ""
+                tabel_num_val = record.get("tabel_num", "") or ""
+                if not record.get("full_name_tabel"):
+                    record["full_name_tabel"] = f"{last_name} {first_name} {patronymic} ({tabel_num_val})".strip()
             columns = ", ".join(record.keys())
             placeholders = ", ".join(["?" for _ in record])
             values = list(record.values())

@@ -8,6 +8,7 @@ response.json
 zoom.py
 zoom_convert.py
 c/
+*.ldb
 *.txt
 *.mdb
 Database_CMDB.db

@@ -460,6 +460,9 @@ class MoveMixin:
                 padded_line = make_padded_line(full_device_data, status_with_clock)
                 device_items.append((padded_line, full_device_data))
 
+            # Сортировка по алфавиту
+            device_items.sort(key=lambda x: x[0])
+
             if list_widget == self.list_left:
                 self.all_devices_left = device_items
                 self.all_devices_left_full = device_items.copy()

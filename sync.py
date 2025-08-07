@@ -1,14 +1,16 @@
 import os
+import time
+from datetime import datetime
 from sqlcipher3 import dbapi2 as sqlite3
-from openpyxl import load_workbook # Загружаем переменные окружения из .env файла
+from openpyxl import load_workbook
 from dotenv import load_dotenv
+
 load_dotenv()
 cip = os.getenv("JWGEWERGJG")
 EXCEL_FILE = "sync.xlsm"
 DB_FILE = "Database_CMDB.db"
-DB_PASSWORD = cip # пароль к базе SQLCipher
+DB_PASSWORD = cip
 
-# Сопоставление полей Excel с полями БД
 FIELD_MAP = {
     1: "last_name",
     2: "first_name",
@@ -33,7 +35,28 @@ def connect_db(db_path, password):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA key='{password}';")
+    # Создаём таблицу для хранения даты последней синхронизации, если её нет
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sync_meta (
+            id INTEGER PRIMARY KEY,
+            last_sync_time INTEGER
+        );
+    """)
+    # Убедимся, что есть хотя бы одна запись
+    cursor.execute("INSERT OR IGNORE INTO sync_meta (id, last_sync_time) VALUES (1, 0);")
+    conn.commit()
     return conn, cursor
+
+def get_file_mod_time(filepath):
+    return int(os.path.getmtime(filepath))
+
+def get_last_sync_time(cursor):
+    cursor.execute("SELECT last_sync_time FROM sync_meta WHERE id = 1")
+    result = cursor.fetchone()
+    return result[0] if result else 0
+
+def update_last_sync_time(cursor, timestamp):
+    cursor.execute("UPDATE sync_meta SET last_sync_time = ? WHERE id = 1", (timestamp,))
 
 def read_excel(file_path):
     wb = load_workbook(file_path)
@@ -47,6 +70,7 @@ def read_excel(file_path):
             record[db_field] = row[idx - 1] if idx <= len(row) else None
         data.append(record)
     return data
+
 
 def sync_data(data, conn, cursor):
     for record in data:
@@ -118,8 +142,8 @@ def main():
         print(f"Файл {EXCEL_FILE} не найден.")
         return
 
-    print("Чтение данных из Excel...")
-    data = read_excel(EXCEL_FILE)
+    # Получаем дату изменения Excel-файла
+    file_mod_time = get_file_mod_time(EXCEL_FILE)
 
     print("Подключение к базе данных...")
     try:
@@ -128,8 +152,24 @@ def main():
         print(f"Ошибка подключения к БД: {e}")
         return
 
+    # Получаем последнюю дату синхронизации
+    last_sync_time = get_last_sync_time(cursor)
+
+    # Сравниваем дату изменения файла с последней синхронизацией
+    if file_mod_time <= last_sync_time:
+        print("Файл не изменился с последней синхронизации. Выход.")
+        conn.close()
+        return
+
+    print("Чтение данных из Excel...")
+    data = read_excel(EXCEL_FILE)
+
     print("Синхронизация данных...")
     sync_data(data, conn, cursor)
+
+    print("Обновление даты последней синхронизации...")
+    update_last_sync_time(cursor, file_mod_time)
+    conn.commit()
 
     print("Готово.")
     conn.close()

@@ -288,7 +288,10 @@ class StoreMixin:
                 SELECT DISTINCT
                     d.old_id,
                     d.serial_number,
-                    tt.type_tech || ' ' || tt.brand || ' ' || tt.model AS device_type,
+                    tt.type_tech,
+                    tt.additional_type,
+                    tt.brand,
+                    tt.model,
                     d.year_of_release,
                     d.date_of_supply,
                     d.owner_of_device,

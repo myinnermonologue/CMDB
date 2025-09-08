@@ -188,7 +188,13 @@ class MoveMixin:
         self.move_right_btn = QPushButton("Переместить---->>>")
         self.move_right_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.move_right_btn.setFixedHeight(60)
+        # Кнопка обмена местами отправителя и получателя
+        self.swap_btn = QPushButton("⇄ Поменять местами")
+        self.swap_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.swap_btn.setFixedHeight(30)
+        self.swap_btn.clicked.connect(self.swap_users_left_right)
         move_layout.addWidget(self.move_right_btn)
+        move_layout.addWidget(self.swap_btn)
         grid.addLayout(move_layout, 9, 1)
 
         # Настройка растягивания колонок
@@ -232,14 +238,34 @@ class MoveMixin:
         # --- Автосохранение значений в QSettings ---
         self.fio_input.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/fio_input', self.fio_input.currentText()))
         self.fio_output.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/fio_output', self.fio_output.currentText()))
+        self.request_input.textChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/request_input', self.request_input.text()))
+        self.combo_move_type.currentIndexChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/combo_move_type', self.combo_move_type.currentIndex()))
+        self.comment_input.textChanged.connect(lambda: QSettings('CKR', 'CMDB').setValue('move/comment_input', self.comment_input.toPlainText()))
 
         # --- Подключаем фильтрацию ---
         self.search_left.textChanged.connect(lambda text: self.filter_device_list('left', text))
         self.search_right.textChanged.connect(lambda text: self.filter_device_list('right', text))
 
-        # После создания всех виджетов — восстановить состояние формы, если нужно
-        if hasattr(self, 'restore_move_form_state'):
-            self.restore_move_form_state()
+        # После создания всех виджетов — восстановить состояние формы
+        settings = QSettings('CKR', 'CMDB')
+        saved_fio_input = settings.value('move/fio_input', '')
+        saved_fio_output = settings.value('move/fio_output', '')
+        saved_request = settings.value('move/request_input', '')
+        saved_combo_idx = settings.value('move/combo_move_type', 0, type=int)
+        saved_comment = settings.value('move/comment_input', '')
+        if saved_fio_input:
+            self.fio_input.setCurrentText(saved_fio_input)
+        if saved_fio_output:
+            self.fio_output.setCurrentText(saved_fio_output)
+        if isinstance(saved_combo_idx, int):
+            self.combo_move_type.setCurrentIndex(saved_combo_idx)
+        if saved_request:
+            self.request_input.setText(saved_request)
+        if saved_comment:
+            self.comment_input.setPlainText(saved_comment)
+        # Обновить списки устройств под выбранных пользователей
+        self.update_device_list(self.fio_input, self.list_left)
+        self.update_device_list(self.fio_output, self.list_right)
 
         self.selected_left_ids = set()
         self.selected_right_ids = set()
@@ -290,6 +316,17 @@ class MoveMixin:
                     continue
                 device_id = device_id_row[0]
                 cursor.execute("UPDATE Table_Devices SET assigned_to = ? WHERE old_id = ?", (to_id, device_id))
+                # Обновление статуса при перемещении со склада/на склад
+                cursor.execute("SELECT type_of_user FROM CKR_users WHERE old_id = ?", (to_id,))
+                to_type_row = cursor.fetchone()
+                cursor.execute("SELECT type_of_user FROM CKR_users WHERE old_id = ?", (from_id,))
+                from_type_row = cursor.fetchone()
+                to_is_warehouse = (to_type_row and str(to_type_row[0]).strip().lower() == 'склад')
+                from_is_warehouse = (from_type_row and str(from_type_row[0]).strip().lower() == 'склад')
+                if to_is_warehouse:
+                    cursor.execute("UPDATE Table_Devices SET status = ? WHERE old_id = ?", ('хранение', device_id))
+                elif from_is_warehouse and not to_is_warehouse:
+                    cursor.execute("UPDATE Table_Devices SET status = ? WHERE old_id = ?", ('эксплуатация', device_id))
                 cursor.execute("SELECT old_id FROM History")
                 rows = cursor.fetchall()
                 valid_ids = []
@@ -629,4 +666,19 @@ class MoveMixin:
         self.selected_list_right.clear()
         self.list_left.clearSelection()
         self.list_right.clearSelection()
+
+    def swap_users_left_right(self):
+        """Быстрый обмен местами отправителя и получателя."""
+        left = self.fio_input.currentText()
+        right = self.fio_output.currentText()
+        self.fio_input.setCurrentText(right)
+        self.fio_output.setCurrentText(left)
+        # Обновить списки устройств
+        self._clear_both_selected()
+        self.update_device_list(self.fio_input, self.list_left)
+        self.update_device_list(self.fio_output, self.list_right)
+        # Сохранить в QSettings
+        settings = QSettings('CKR', 'CMDB')
+        settings.setValue('move/fio_input', self.fio_input.currentText())
+        settings.setValue('move/fio_output', self.fio_output.currentText())
 

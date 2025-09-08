@@ -186,7 +186,7 @@ class TechnicMixin:
         cursor.execute("""
             SELECT assigned_to, serial_number, sn_on_box, sn_on_device, device_type, condition, status,
                 inv_number, year_of_release, owner_of_device, date_of_supply,
-                price, owner_of_device
+                price, owner_of_device, description
             FROM Table_Devices
             WHERE full_device_data = ?
         """, (selected_text,))
@@ -199,7 +199,7 @@ class TechnicMixin:
         (
             assigned_to, serial_number, sn_on_box, sn_on_device, device_type, condition, status,
             inv_number, year_of_release, supplier, date_of_supply,
-            price, owner_of_device
+            price, owner_of_device, description
         ) = result
 
         # Получаем данные из таблицы CKR_users по assigned_to
@@ -250,6 +250,7 @@ class TechnicMixin:
         self.price_field.setText(str(price or ""))
         self.owner_field.setCurrentText(str(owner_of_device or ""))
         self.location_field.setText(str(user_address or ""))
+        self.comment_field.setPlainText(str(description or ""))
 
                 # Получаем old_id устройства
         cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ?", (selected_text,))
@@ -304,7 +305,7 @@ class TechnicMixin:
         # Получаем текущие значения из базы
         cursor.execute("""
             SELECT serial_number, sn_on_box, sn_on_device, condition, status, inv_number, year_of_release,
-                supplier, date_of_supply, price, owner_of_device
+                supplier, date_of_supply, price, owner_of_device, description
             FROM Table_Devices
             WHERE old_id = ?
         """, (device_old_id,))
@@ -326,7 +327,8 @@ class TechnicMixin:
             self.provider_field.currentText(),
             self.delivery_field.text(),
             self.price_field.text(),
-            self.owner_field.currentText()
+            self.owner_field.currentText(),
+            self.comment_field.toPlainText().strip()
         )
 
         fields = [
@@ -353,7 +355,7 @@ class TechnicMixin:
             UPDATE Table_Devices
             SET serial_number = ?, sn_on_box = ?, sn_on_device = ?, condition = ?, status = ?, inv_number = ?,
                 year_of_release = ?, supplier = ?, date_of_supply = ?,
-                price = ?, owner_of_device = ?,
+                price = ?, owner_of_device = ?, description = ?,
                 assigned_to = (SELECT old_id FROM CKR_users WHERE full_name_tabel = ?)
             WHERE old_id = ?
         """, new_data + (self.where_field.text(), device_old_id))

@@ -1,10 +1,9 @@
 import os
-os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+# os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
 os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
 # os.environ["QT_SCALE_FACTOR"] = "1"  # если хотите всегда 100%
 
 import sys
-import threading
 from PyQt6.QtWidgets import QApplication
 from main_window import MainWindow
 from PyQt6.QtCore import QSettings
@@ -33,9 +32,8 @@ def get_db_connection():
     return conn
 
 if __name__ == "__main__":
-    # Опциональная синхронизация данных из Excel в фоне (не блокирует запуск)
-    if os.getenv("CMDB_SYNC_ON_START", "0") == "1":
-        threading.Thread(target=sync_main, daemon=True).start()
+    # Синхронизация данных из Excel перед запуском приложения
+    sync_main()
     app = QApplication(sys.argv)
     # icon_path = resource_path("icon.ico")
     # app.setWindowIcon(QIcon(icon_path))
@@ -52,9 +50,9 @@ if __name__ == "__main__":
     window = MainWindow()
     # window.setWindowIcon(QIcon(icon_path))
     screen = QApplication.primaryScreen().availableGeometry()
+    print(screen.width(), screen.height())
     window.setMinimumSize(int(screen.width() * 0.7), int(screen.height() * 0.7))
-    # Убираем ограничение по высоте для полноценного разворота на весь экран
-    window.setMaximumSize(int(screen.width() * 1), int(screen.height() * 1))
+    window.setMaximumSize(int(screen.width() * 1), int(screen.height() * 0.98))
     window.showMaximized()
     sys.exit(app.exec())
  

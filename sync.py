@@ -144,6 +144,7 @@ def main():
 
     # Получаем дату изменения Excel-файла
     file_mod_time = get_file_mod_time(EXCEL_FILE)
+    print(f"Время изменения файла: {datetime.fromtimestamp(file_mod_time).strftime('%Y-%m-%d %H:%M:%S')}")
 
     print("Подключение к базе данных...")
     try:
@@ -154,6 +155,7 @@ def main():
 
     # Получаем последнюю дату синхронизации
     last_sync_time = get_last_sync_time(cursor)
+    print(f"Последняя синхронизация: {datetime.fromtimestamp(last_sync_time).strftime('%Y-%m-%d %H:%M:%S') if last_sync_time > 0 else 'Никогда'}")
 
     # Сравниваем дату изменения файла с последней синхронизацией
     if file_mod_time <= last_sync_time:
@@ -163,6 +165,12 @@ def main():
 
     print("Чтение данных из Excel...")
     data = read_excel(EXCEL_FILE)
+    print(f"Найдено записей для синхронизации: {len(data)}")
+
+    if not data:
+        print("Нет данных для синхронизации.")
+        conn.close()
+        return
 
     print("Синхронизация данных...")
     sync_data(data, conn, cursor)

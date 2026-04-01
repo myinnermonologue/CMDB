@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSettings
 from datetime import datetime
 from db import get_db_connection
+import traceback
 class TechnicMixin:
     def technic_action_func(self):
         # Удаляем старые ссылки на виджеты, чтобы не обращаться к удалённым объектам
@@ -39,6 +40,7 @@ class TechnicMixin:
         self.year_field = QLineEdit()
         self.provider_field = QComboBox()
         self.provider_field.addItems(["ООО \"ЦКР\"", "АО \"Джет\"", "ПАО НЛМК", "ПАО ПГК"])
+        self.provider_field.setEditable(True)
         self.delivery_field = QLineEdit()
         self.price_field = QLineEdit()
         self.owner_field = QComboBox()
@@ -184,9 +186,21 @@ class TechnicMixin:
 
         # Получаем данные из Table_Devices
         cursor.execute("""
-            SELECT assigned_to, serial_number, sn_on_box, sn_on_device, device_type, condition, status,
-                inv_number, year_of_release, owner_of_device, date_of_supply,
-                price, owner_of_device, description
+            SELECT
+                assigned_to,
+                serial_number,
+                sn_on_box,
+                sn_on_device,
+                device_type,
+                "condition",
+                status,
+                inv_number,
+                year_of_release,
+                supplier,
+                date_of_supply,
+                price,
+                owner_of_device,
+                description
             FROM Table_Devices
             WHERE full_device_data = ?
         """, (selected_text,))
@@ -197,9 +211,20 @@ class TechnicMixin:
             return
 
         (
-            assigned_to, serial_number, sn_on_box, sn_on_device, device_type, condition, status,
-            inv_number, year_of_release, supplier, date_of_supply,
-            price, owner_of_device, description
+            assigned_to,
+            serial_number,
+            sn_on_box,
+            sn_on_device,
+            device_type,
+            condition,
+            status,
+            inv_number,
+            year_of_release,
+            supplier,
+            date_of_supply,
+            price,
+            owner_of_device,
+            description
         ) = result
 
         # Получаем данные из таблицы CKR_users по assigned_to
@@ -290,186 +315,155 @@ class TechnicMixin:
         self.populate_device_fields(selected_text)
     
     def save_changes(self):
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        def normalize_number(value: str):
+            value = value.strip().lower()
+            if value in ("", "nan", "none"):
+                return None
+            try:
+                return float(value)
+            except ValueError:
+                return None
 
-        # Получаем old_id устройства
-        selected_text = self.search_field.currentText()
-        cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ?", (selected_text,))
-        result = cursor.fetchone()
-        if not result:
-            conn.close()
-            return
-        device_old_id = result[0]
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
 
-        # Получаем текущие значения из базы
-        cursor.execute("""
-            SELECT serial_number, sn_on_box, sn_on_device, condition, status, inv_number, year_of_release,
-                supplier, date_of_supply, price, owner_of_device, description
-            FROM Table_Devices
-            WHERE old_id = ?
-        """, (device_old_id,))
-        current_data = cursor.fetchone()
+            selected_text = self.search_field.currentText()
+            cursor.execute("SELECT old_id FROM Table_Devices WHERE full_device_data = ?", (selected_text,))
+            result = cursor.fetchone()
+            if not result:
+                conn.close()
+                return
 
-        if not current_data:
-            conn.close()
-            return
+            device_old_id = result[0]
 
-        # Значения из формы
-        new_data = (
-            self.serial_field.text(),
-            self.sn_on_box_field.text(),
-            self.sn_on_device_field.text(),
-            self.condition_field.currentText(),
-            self.status_field.currentText(),
-            self.inventory_field.text(),
-            self.year_field.text(),
-            self.provider_field.currentText(),
-            self.delivery_field.text(),
-            self.price_field.text(),
-            self.owner_field.currentText(),
-            self.comment_field.toPlainText().strip()
-        )
+            cursor.execute("""
+                SELECT serial_number, sn_on_box, sn_on_device, "condition", status, inv_number,
+                    year_of_release, supplier, date_of_supply, price,
+                    owner_of_device, description
+                FROM Table_Devices
+                WHERE old_id = ?
+            """, (device_old_id,))
 
-        fields = [
-            'Серийный номер',
-            'SN на коробке',
-            'SN на устройстве',
-            'Состояние',
-            'Статус',
-            'Инвентарный №',
-            'Год выпуска',
-            'Поставщик',
-            'Дата поставки',
-            'Стоимость',
-            'Собственник'
-        ]
+            current_data = cursor.fetchone()
+            if not current_data:
+                conn.close()
+                return
 
-        db_fields = [
-            'serial_number', 'sn_on_box', 'sn_on_device', 'condition', 'status', 'inv_number', 'year_of_release',
-            'supplier', 'date_of_supply', 'price', 'owner_of_device'
-        ]
+            def normalize_price(value: str):
+                value = value.strip()
+                if value == "":
+                    return None
+                return value.replace(",", ".")
 
-        # Обновление Table_Devices
-        cursor.execute("""
-            UPDATE Table_Devices
-            SET serial_number = ?, sn_on_box = ?, sn_on_device = ?, condition = ?, status = ?, inv_number = ?,
-                year_of_release = ?, supplier = ?, date_of_supply = ?,
-                price = ?, owner_of_device = ?, description = ?,
-                assigned_to = (SELECT old_id FROM CKR_users WHERE full_name_tabel = ?)
-            WHERE old_id = ?
-        """, new_data + (self.where_field.text(), device_old_id))
+            price_value = normalize_price(self.price_field.text())
 
-        # Получаем старое значение full_device_data до обновления
-        cursor.execute("SELECT full_device_data FROM Table_Devices WHERE old_id = ?", (device_old_id,))
-        old_full_device_data = cursor.fetchone()
-        old_full_device_data = old_full_device_data[0] if old_full_device_data else ""
+            new_data = (
+                self.serial_field.text().strip(),
+                self.sn_on_box_field.text().strip(),
+                self.sn_on_device_field.text().strip(),
+                self.condition_field.currentText().strip(),
+                self.status_field.currentText().strip(),
+                self.inventory_field.text().strip(),
+                self.year_field.text().strip(),
+                self.provider_field.currentText().strip(),
+                self.delivery_field.text().strip(),
+                price_value,
+                self.owner_field.currentText().strip(),
+                self.comment_field.toPlainText().strip()
+            )
 
-        # Формируем новое значение full_device_data
-        type_ = self.type_field.text().strip()
-        subtype = self.subtype_field.text().strip()
-        brand = self.manufacturer_field.text().strip()
-        model = self.model_field.text().strip()
-        serial = self.serial_field.text().strip()
-        sn_on_box = self.sn_on_box_field.text().strip()
-        sn_on_device = self.sn_on_device_field.text().strip()
-        full_name = f"{type_}"
-        if subtype and subtype.lower() != "не применимо":
-            full_name += f" {subtype}"
-        full_name += f" {brand}"
-        if model and model.lower() != "не применимо":
-            full_name += f" {model}"
-        full_name += f" ({serial})"
-        cursor.execute("UPDATE Table_Devices SET full_device_data = ? WHERE old_id = ?", (full_name, device_old_id))
+            cursor.execute("""
+                UPDATE Table_Devices
+                SET serial_number = ?, sn_on_box = ?, sn_on_device = ?, "condition" = ?,
+                    status = ?, inv_number = ?, year_of_release = ?, supplier = ?,
+                    date_of_supply = ?, price = ?, owner_of_device = ?, description = ?,
+                    assigned_to = (SELECT old_id FROM CKR_users WHERE full_name_tabel = ?)
+                WHERE old_id = ?
+            """, new_data + (self.where_field.text(), device_old_id))
 
-        # Если изменилось итоговое название устройства — пишем в историю
-        if old_full_device_data != full_name:
-            # Получаем текущее значение max(old_id) в History
+            # --- HISTORY ID ---
             cursor.execute("SELECT COALESCE(MAX(old_id), 0) FROM History")
-            history_id = cursor.fetchone()[0] + 1
+            history_id = int(cursor.fetchone()[0]) + 1
 
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            def add_history(field_name, old_value, new_value):
+                nonlocal history_id
 
-            cursor.execute("""
-                INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
-                    where_moved, from_moved, ticket, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                history_id,
-                now,
-                "Изменение",
-                self.current_user,
-                device_old_id,
-                None,
-                None,
-                None,
-                f"full_device_data было: {old_full_device_data}"
-            ))
-            history_id += 1
+                if str(old_value).strip() != str(new_value).strip():
+                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            cursor.execute("""
-                INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
-                    where_moved, from_moved, ticket, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                history_id,
-                now,
-                "Изменение",
-                self.current_user,
-                device_old_id,
-                None,
-                None,
-                None,
-                f"full_device_data стало: {full_name}"
-            ))
-            history_id += 1
+                    desc = f"{field_name} изменено с '{old_value}' на '{new_value}'"
 
-        # Если изменился serial_number — пишем в историю
-        old_serial_number = current_data[0] if current_data else None
-        new_serial_number = self.serial_field.text().strip()
-        if old_serial_number != new_serial_number:
-            cursor.execute("SELECT COALESCE(MAX(old_id), 0) FROM History")
-            history_id = cursor.fetchone()[0] + 1
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute("""
-                INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
-                    where_moved, from_moved, ticket, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                history_id,
-                now,
-                "Изменение",
-                self.current_user,
-                device_old_id,
-                None,
-                None,
-                None,
-                f"serial_number было: {old_serial_number}"
-            ))
-            history_id += 1
-            cursor.execute("""
-                INSERT INTO History (old_id, date, type_of_action, who_add_to_db, tech_move,
-                    where_moved, from_moved, ticket, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                history_id,
-                now,
-                "Изменение",
-                self.current_user,
-                device_old_id,
-                None,
-                None,
-                None,
-                f"serial_number стало: {new_serial_number}"
-            ))
-            history_id += 1
+                    cursor.execute("""
+                        INSERT INTO History (
+                            old_id, date, type_of_action, who_add_to_db,
+                            tech_move, where_moved, from_moved, ticket, description
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        history_id,
+                        now,
+                        "изменение",
+                        self.current_user,
+                        device_old_id,
+                        None,
+                        None,
+                        None,
+                        desc
+                    ))
 
-        conn.commit()
-        conn.close()
-        QMessageBox.information(self, "Успешно", "Изменения сохранены и записаны в историю.")
+                    history_id += 1
 
-        # Обновить выпадающий список поиска
-        self.load_device_data()
+            # --- full_device_data ---
+            cursor.execute("SELECT full_device_data FROM Table_Devices WHERE old_id = ?", (device_old_id,))
+            old_full_device_data = cursor.fetchone()
+            old_full_device_data = old_full_device_data[0] if old_full_device_data else ""
+
+            type_ = self.type_field.text().strip()
+            subtype = self.subtype_field.text().strip()
+            brand = self.manufacturer_field.text().strip()
+            model = self.model_field.text().strip()
+            serial = self.serial_field.text().strip()
+
+            full_name = f"{type_}"
+            if subtype and subtype.lower() != "не применимо":
+                full_name += f" {subtype}"
+            full_name += f" {brand}"
+            if model and model.lower() != "не применимо":
+                full_name += f" {model}"
+            full_name += f" ({serial})"
+
+            cursor.execute(
+                "UPDATE Table_Devices SET full_device_data = ? WHERE old_id = ?",
+                (full_name, device_old_id)
+            )
+
+            if old_full_device_data != full_name:
+                add_history("full_device_data", old_full_device_data, full_name)
+
+            # --- изменения полей ---
+            add_history("Состояние", current_data[3], self.condition_field.currentText())
+            add_history("Статус", current_data[4], self.status_field.currentText())
+            add_history("Инвентарный номер", current_data[5], self.inventory_field.text())
+            add_history("Год выпуска", current_data[6], self.year_field.text())
+            add_history("Поставщик", current_data[7], self.provider_field.currentText())
+            add_history("Дата поставки", current_data[8], self.delivery_field.text())
+            add_history("Стоимость", current_data[9], price_value)
+            add_history("Собственник", current_data[10], self.owner_field.currentText())
+            add_history("SN на коробке", current_data[1], self.sn_on_box_field.text())
+            add_history("SN на устройстве", current_data[2], self.sn_on_device_field.text())
+            add_history("Комментарий", current_data[11], self.comment_field.toPlainText())
+
+            conn.commit()
+            conn.close()
+
+            QMessageBox.information(self, "Успешно", "Изменения сохранены")
+            self.load_device_data()
+
+        except Exception as e:
+            print("ERROR:", e)
+            print(traceback.format_exc())
+            QMessageBox.critical(self, "Ошибка", traceback.format_exc())
 
     def load_device_data(self):
         conn = get_db_connection()

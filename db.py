@@ -15,8 +15,12 @@ load_dotenv(resource_path(".env"))
 
 def get_db_connection():
     cip = os.getenv("JWGEWERGJG")
-    db_file = "Database_CMDB.db"
-    if os.path.exists(db_file):
+    db_file = "\\\\cr-s-dc01\\csc-dfs0001\\Каталоги_по_запросу\\51750127_Business_Soft\\new_new_CMDB\\Database_CMDB.db"
+    db_file_local = "Database_CMDB.db"
+    if os.path.exists(db_file_local):
+        conn = sqlcipher.connect(db_file_local)
+        conn.execute(f"PRAGMA key = '{cip}'")
+    elif os.path.exists(db_file):
         conn = sqlcipher.connect(db_file)
         conn.execute(f"PRAGMA key = '{cip}'")
     else:
@@ -119,7 +123,9 @@ def get_db_connection():
     return conn
 
 def get_db_filename():
-    if os.path.exists("Database_CMDB.db"):
+    if os.path.exists("\\\\cr-s-dc01\\csc-dfs0001\\Каталоги_по_запросу\\51750127_Business_Soft\\new_new_CMDB\\Database_CMDB.db"):
+        return "\\\\cr-s-dc01\\csc-dfs0001\\Каталоги_по_запросу\\51750127_Business_Soft\\new_new_CMDB\\Database_CMDB.db"
+    elif os.path.exists("Database_CMDB.db"):
         return "Database_CMDB.db"
     else:
         return "test_cmdb.db"

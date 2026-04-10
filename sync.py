@@ -8,7 +8,11 @@ from dotenv import load_dotenv
 load_dotenv()
 cip = os.getenv("JWGEWERGJG")
 EXCEL_FILE = "sync.xlsm"
-DB_FILE = "Database_CMDB.db"
+if os.path.exists("\\\\cr-s-dc01\\csc-dfs0001\\Каталоги_по_запросу\\51750127_Business_Soft\\new_new_CMDB\\Database_CMDB.db"):
+    DB_FILE = "\\\\cr-s-dc01\\csc-dfs0001\\Каталоги_по_запросу\\51750127_Business_Soft\\new_new_CMDB\\Database_CMDB.db"
+else:
+    DB_FILE = "Database_CMDB.db"
+
 DB_PASSWORD = cip
 
 FIELD_MAP = {

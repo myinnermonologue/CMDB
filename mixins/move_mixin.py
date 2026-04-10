@@ -247,6 +247,7 @@ class MoveMixin:
         self.search_right.textChanged.connect(lambda text: self.filter_device_list('right', text))
 
         # После создания всех виджетов — восстановить состояние формы
+        # После создания всех виджетов — восстановить состояние формы
         settings = QSettings('CKR', 'CMDB')
         saved_fio_input = settings.value('move/fio_input', '')
         saved_fio_output = settings.value('move/fio_output', '')
@@ -263,12 +264,16 @@ class MoveMixin:
             self.request_input.setText(saved_request)
         if saved_comment:
             self.comment_input.setPlainText(saved_comment)
+
+        # ВАЖНО: Создаем атрибуты ДО вызова update_device_list
+        self.selected_left_ids = set()
+        self.selected_right_ids = set()
+
         # Обновить списки устройств под выбранных пользователей
         self.update_device_list(self.fio_input, self.list_left)
         self.update_device_list(self.fio_output, self.list_right)
 
-        self.selected_left_ids = set()
-        self.selected_right_ids = set()
+        # Подключаем сигналы ПОСЛЕ создания атрибутов
         self.list_left.itemSelectionChanged.connect(self._update_selected_left)
         self.list_right.itemSelectionChanged.connect(self._update_selected_right)
 

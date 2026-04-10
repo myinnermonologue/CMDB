@@ -19,13 +19,15 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def get_db_connection():
-    db_file = "Database_CMDB.db"
+    db_file = "\\\\cr-s-dc01\\csc-dfs0001\\Каталоги_по_запросу\\51750127_Business_Soft\\new_new_CMDB\\Database_CMDB.db"
+    if os.path.exists("Database_CMDB.db"):
+        conn = sqlite3.connect("Database_CMDB.db")
+        return conn 
     test_db_file = "test_cmdb.db"
     if not os.path.exists(db_file):
         # Если нет основной базы, копируем тестовую
         if os.path.exists(test_db_file):
             shutil.copyfile(test_db_file, db_file)
-        else:
             raise FileNotFoundError("Нет ни основной базы, ни тестовой test_cmdb.db!")
     # Открываем как обычную SQLite-базу
     conn = sqlite3.connect(db_file)
